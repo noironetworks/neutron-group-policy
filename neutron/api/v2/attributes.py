@@ -438,6 +438,24 @@ def _validate_non_negative(data, valid_values=None):
         return msg
 
 
+def _validate_endpoint_reference(data, key_specs=None):
+    if not isinstance(data, dict):
+        msg = _("'%s' is not a dictionary") % data
+        LOG.debug(msg)
+        return msg
+
+    if len(data) != 1:
+        msg = _("One endpoint reference is required")
+        LOG.debug(msg)
+        return msg
+    elif data.keys() not in [['port'], ['network']]:
+            msg = _("Endpoint reference key is invalid")
+            LOG.debug(msg)
+            return msg
+    else:
+        return _validate_uuid(data.values()[0])
+
+
 def convert_to_boolean(data):
     if isinstance(data, basestring):
         val = data.lower()
