@@ -123,6 +123,16 @@ class NeutronManager(object):
         # the rest of service plugins
         self.service_plugins = {constants.CORE: self.plugin}
         self._load_service_plugins()
+        api_interceptor_provider = cfg.CONF.api_interceptor
+        import pdb; pdb.set_trace()
+        if api_interceptor_provider:
+            self.api_interceptor = self._get_plugin_instance(
+                                       'neutron.api_interceptor',
+                                       api_interceptor_provider)
+            # TODO(Sumit): pass plugin references to interceptor
+            self.plugin = self.api_interceptor
+            for k,v in self.service_plugins.iteritems():
+                self.service_plugins[k] = self.api_interceptor
 
     def _get_plugin_instance(self, namespace, plugin_provider):
         try:
