@@ -1,0 +1,666 @@
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import contextlib
+
+import webob.exc
+
+from neutron.api import extensions as api_ext
+from neutron.common import config
+from neutron.db.grouppolicy import db_group_policy as gpdb
+import neutron.extensions
+from neutron.extensions import group_policy as gpolicy
+from neutron.openstack.common import importutils
+from neutron.openstack.common import uuidutils
+from neutron.plugins.common import constants
+from neutron.tests.unit import test_db_plugin
+
+
+_uuid = uuidutils.generate_uuid
+DB_CORE_PLUGIN_KLASS = 'neutron.db.db_base_plugin_v2.NeutronDbPluginV2'
+DB_GP_PLUGIN_KLASS = (
+    "neutron.db.grouppolicy.db_group_policy.GroupPolicyDbMixin"
+)
+
+extensions_path = ':'.join(neutron.extensions.__path__)
+
+
+class GroupPolicyTestMixin(object):
+    resource_prefix_map = dict(
+        (k, constants.COMMON_PREFIXES[constants.GROUP_POLICY])
+        for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
+    )
+
+    def _get_test_endpoint_attrs(self, name='ep1'):
+        attrs = {'name': name,
+                 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _get_test_endpoint_group_attrs(self, name='epg1'):
+        attrs = {'name': name,
+                 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _get_test_contract_attrs(self, name='ct1'):
+        attrs = {'name': name,
+                 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _get_test_policy_rule_attrs(self, name='pr1'):
+        attrs = {'name': name,
+                 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _get_test_policy_classifier_attrs(self, name='pc1'):
+        attrs = {'name': name,
+                 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _get_test_policy_action_attrs(self, name='pa1'):
+        attrs = {'name': name,
+                 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _get_test_bridge_domain_attrs(self, name='bd1'):
+        attrs = {'name': name,
+                 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _get_test_routing_domain_attrs(self, name='rd1'):
+        attrs = {'name': name,
+                 'tenant_id': self._tenant_id}
+
+        return attrs
+
+    def _create_endpoint(self, fmt, name, description, endpoint_group_id,
+                         expected_res_status=None, **kwargs):
+        data = {'endpoint': {'name': name,
+                             'description': description,
+                             'endpoint_group_id': endpoint_group_id,
+                             'tenant_id': self._tenant_id}}
+
+        ep_req = self.new_create_request('endpoints', data, fmt)
+        ep_res = ep_req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(ep_res.status_int, expected_res_status)
+
+        return ep_res
+
+    def _create_endpoint_group(self, fmt, name, description,
+                               provided_contracts, consumed_contracts,
+                               bridge_domain_id, expected_res_status=None,
+                               **kwargs):
+        data = {'endpoint_group': {'name': name,
+                                   'description': description,
+                                   'provided_contracts': provided_contracts,
+                                   'consumed_contracts': consumed_contracts,
+                                   'bridge_domain_id': bridge_domain_id,
+                                   'tenant_id': self._tenant_id}}
+
+        epg_req = self.new_create_request('endpoint_groups', data, fmt)
+        epg_res = epg_req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(epg_res.status_int, expected_res_status)
+
+        return epg_res
+
+    def _create_policy_rule(self, fmt, name, description, enabled,
+                            contract_filter_id, policy_classifier_id,
+                            policy_actions, expected_res_status=None,
+                            **kwargs):
+        data = {'policy_rule': {'name': name,
+                                'description': description,
+                                'tenant_id': self._tenant_id,
+                                'enabled': enabled,
+                                'contract_filter_id': contract_filter_id,
+                                'policy_classifier_id': policy_classifier_id,
+                                'policy_actions': policy_actions}}
+
+        pr_req = self.new_create_request('policy_rules', data, fmt)
+        pr_res = pr_req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(pr_res.status_int, expected_res_status)
+
+        return pr_res
+
+    def _create_contract(self, fmt, name, description, child_contracts,
+                         policy_rules, expected_res_status=None, **kwargs):
+        data = {'contract': {'name': name,
+                             'description': description,
+                             'tenant_id': self._tenant_id,
+                             'child_contracts': child_contracts,
+                             'policy_rules': policy_rules}}
+
+        ct_req = self.new_create_request('contracts', data, fmt)
+        ct_res = ct_req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(ct_res.status_int, expected_res_status)
+
+        return ct_res
+
+    def _create_policy_classifier(self, fmt, name, description, protocol,
+                                  port_range, direction,
+                                  expected_res_status=None, **kwargs):
+        data = {'policy_classifier': {'name': name,
+                                      'description': description,
+                                      'protocol': protocol,
+                                      'port_range': port_range,
+                                      'direction': direction,
+                                      'tenant_id': self._tenant_id}}
+
+        pc_req = self.new_create_request('policy_classifiers', data, fmt)
+        pc_res = pc_req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(pc_res.status_int, expected_res_status)
+
+        return pc_res
+
+    def _create_policy_action(self, fmt, name, description, action_type,
+                              action_value, expected_res_status=None,
+                              **kwargs):
+        data = {'policy_action': {'name': name,
+                                  'description': description,
+                                  'action_type': action_type,
+                                  'action_value': action_value,
+                                  'tenant_id': self._tenant_id}}
+
+        pa_req = self.new_create_request('policy_actions', data, fmt)
+        pa_res = pa_req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(pa_res.status_int, expected_res_status)
+
+        return pa_res
+
+    def _create_bridge_domain(self, fmt, name, description, routing_domain_id,
+                              expected_res_status=None, **kwargs):
+        data = {'bridge_domain': {'name': name,
+                                  'description': description,
+                                  'routing_domain_id': routing_domain_id,
+                                  'tenant_id': self._tenant_id}}
+
+        bd_req = self.new_create_request('bridge_domains', data, fmt)
+        bd_res = bd_req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(bd_res.status_int, expected_res_status)
+
+        return bd_res
+
+    def _create_routing_domain(self, fmt, name, description, ip_version,
+                               ip_supernet, subnet_prefix_length,
+                               expected_res_status=None, **kwargs):
+        data = {'routing_domain': {'name': name,
+                                   'description': description,
+                                   'ip_version': ip_version,
+                                   'ip_supernet': ip_supernet,
+                                   'subnet_prefix_length':
+                                   subnet_prefix_length,
+                                   'tenant_id': self._tenant_id}}
+
+        rd_req = self.new_create_request('routing_domains', data, fmt)
+        rd_res = rd_req.get_response(self.ext_api)
+        if expected_res_status:
+            self.assertEqual(rd_res.status_int, expected_res_status)
+
+        return rd_res
+
+    @contextlib.contextmanager
+    def endpoint(self, fmt=None, name='ep1', description="",
+                 endpoint_group_id=None, no_delete=False, **kwargs):
+        if not fmt:
+            fmt = self.fmt
+
+        res = self._create_endpoint(fmt, name, description, endpoint_group_id,
+                                    **kwargs)
+        if res.status_int >= 400:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        ep = self.deserialize(fmt or self.fmt, res)
+        try:
+            yield ep
+        finally:
+            if not no_delete:
+                self._delete('endpoints', ep['endpoint']['id'])
+
+    @contextlib.contextmanager
+    def endpoint_group(self, fmt=None, name='ep1', description="",
+                       provided_contracts=None, consumed_contracts=None,
+                       bridge_domain_id=None, no_delete=False, **kwargs):
+        if not fmt:
+            fmt = self.fmt
+
+        if not provided_contracts:
+            provided_contracts = {}
+
+        if not consumed_contracts:
+            consumed_contracts = {}
+
+        res = self._create_endpoint_group(fmt, name, description,
+                                          provided_contracts,
+                                          consumed_contracts,
+                                          bridge_domain_id, **kwargs)
+        if res.status_int >= 400:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        epg = self.deserialize(fmt or self.fmt, res)
+        try:
+            yield epg
+        finally:
+            if not no_delete:
+                self._delete('endpoint_groups', epg['endpoint_group']['id'])
+
+    @contextlib.contextmanager
+    def contract(self, fmt=None, name='ct1', description="",
+                 child_contracts=None, policy_rules=None, no_delete=False,
+                 **kwargs):
+        if not fmt:
+            fmt = self.fmt
+
+        if not child_contracts:
+            child_contracts = []
+
+        if not policy_rules:
+            policy_rules = []
+
+        res = self._create_contract(fmt, name, description, child_contracts,
+                                    policy_rules, **kwargs)
+        if res.status_int >= 400:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        ct = self.deserialize(fmt or self.fmt, res)
+        try:
+            yield ct
+        finally:
+            if not no_delete:
+                self._delete('contracts',
+                             ct['contract']['id'])
+
+    @contextlib.contextmanager
+    def policy_rule(self, fmt=None, name='pr1', description="",
+                    enabled=True, contract_filter_id=None,
+                    policy_classifier_id=
+                    '00000000-ffff-ffff-ffff-000000000000',
+                    policy_actions=None, no_delete=False, **kwargs):
+        if not fmt:
+            fmt = self.fmt
+
+        if not policy_actions:
+            policy_actions = []
+
+        res = self._create_policy_rule(fmt, name, description, enabled,
+                                       contract_filter_id,
+                                       policy_classifier_id, policy_actions,
+                                       **kwargs)
+        if res.status_int >= 400:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        pr = self.deserialize(fmt or self.fmt, res)
+        try:
+            yield pr
+        finally:
+            if not no_delete:
+                self._delete('policy_rules',
+                             pr['policy_rule']['id'])
+
+    @contextlib.contextmanager
+    def policy_classifier(self, fmt=None, name='pc1', description="",
+                          protocol='tcp', port_range='80', direction='in',
+                          no_delete=False, **kwargs):
+        if not fmt:
+            fmt = self.fmt
+
+        res = self._create_policy_classifier(fmt, name, description, protocol,
+                                             port_range, direction, **kwargs)
+        if res.status_int >= 400:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        pc = self.deserialize(fmt or self.fmt, res)
+        try:
+            yield pc
+        finally:
+            if not no_delete:
+                self._delete('policy_classifiers',
+                             pc['policy_classifier']['id'])
+
+    @contextlib.contextmanager
+    def policy_action(self, fmt=None, name='pa1', description="",
+                      action_type='allow', action_value=None,
+                      no_delete=False, **kwargs):
+        if not fmt:
+            fmt = self.fmt
+
+        res = self._create_policy_action(fmt, name, description, action_type,
+                                         action_value, **kwargs)
+        if res.status_int >= 400:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        pa = self.deserialize(fmt or self.fmt, res)
+        try:
+            yield pa
+        finally:
+            if not no_delete:
+                self._delete('policy_actions', pa['policy_action']['id'])
+
+    @contextlib.contextmanager
+    def bridge_domain(self, fmt=None, name='bd1', description="",
+                      routing_domain_id=None, no_delete=False, **kwargs):
+        if not fmt:
+            fmt = self.fmt
+
+        res = self._create_bridge_domain(fmt, name, description,
+                                         routing_domain_id, **kwargs)
+        if res.status_int >= 400:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        bd = self.deserialize(fmt or self.fmt, res)
+        try:
+            yield bd
+        finally:
+            if not no_delete:
+                self._delete('bridge_domains', bd['bridge_domain']['id'])
+
+    @contextlib.contextmanager
+    def routing_domain(self, fmt=None, name='rd1', description="",
+                       ip_version=4, ip_supernet='10.0.0.0/8',
+                       subnet_prefix_length=24, no_delete=False,
+                       **kwargs):
+        if not fmt:
+            fmt = self.fmt
+
+        res = self._create_routing_domain(fmt, name, description,
+                                          ip_version, ip_supernet,
+                                          subnet_prefix_length,
+                                          **kwargs)
+        if res.status_int >= 400:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        rd = self.deserialize(fmt or self.fmt, res)
+        try:
+            yield rd
+        finally:
+            if not no_delete:
+                self._delete('routing_domains', rd['routing_domain']['id'])
+
+
+class GroupPolicyDbTestCase(GroupPolicyTestMixin,
+                            test_db_plugin.NeutronDbPluginV2TestCase):
+
+    def setUp(self, core_plugin=None, gp_plugin=None, ext_mgr=None):
+        if not gp_plugin:
+            gp_plugin = DB_GP_PLUGIN_KLASS
+        service_plugins = {'gp_plugin_name': gp_plugin}
+
+        gpdb.GroupPolicyDbMixin.supported_extension_aliases = ['group-policy']
+        super(GroupPolicyDbTestCase, self).setUp(
+            ext_mgr=ext_mgr,
+            service_plugins=service_plugins
+        )
+
+        if not ext_mgr:
+            self.plugin = importutils.import_object(gp_plugin)
+            ext_mgr = api_ext.PluginAwareExtensionManager(
+                extensions_path,
+                {constants.GROUP_POLICY: self.plugin}
+            )
+            app = config.load_paste_app('extensions_test_app')
+            self.ext_api = api_ext.ExtensionMiddleware(app, ext_mgr=ext_mgr)
+
+
+class TestGroupPolicyMappedResources(GroupPolicyDbTestCase):
+
+    def test_create_endpoint(self, **kwargs):
+        name = "ep1"
+        attrs = self._get_test_endpoint_attrs(name)
+
+        with self.endpoint_group() as epg:
+            epg_id = epg['endpoint_group']['id']
+            with self.endpoint(name=name, endpoint_group_id=epg_id) as ep:
+                for k, v in attrs.iteritems():
+                    self.assertEqual(ep['endpoint'][k], v)
+                req = self.new_show_request('endpoint_groups',
+                                            epg_id,
+                                            fmt=self.fmt)
+                res = self.deserialize(self.fmt,
+                                       req.get_response(self.ext_api))
+                self.assertEqual(res['endpoint_group']['endpoints'],
+                                 [ep['endpoint']['id']])
+
+    def test_show_endpoint(self):
+        name = "ep1"
+        attrs = self._get_test_endpoint_attrs(name)
+
+        with self.endpoint_group() as epg:
+            epg_id = epg['endpoint_group']['id']
+            with self.endpoint(name=name, endpoint_group_id=epg_id) as ep:
+                req = self.new_show_request('endpoints',
+                                            ep['endpoint']['id'],
+                                            fmt=self.fmt)
+                res = self.deserialize(self.fmt,
+                                       req.get_response(self.ext_api))
+                for k, v in attrs.iteritems():
+                    self.assertEqual(res['endpoint'][k], v)
+
+    def test_create_endpoint_group(self, **kwargs):
+        name = "epg1"
+        attrs = self._get_test_endpoint_group_attrs(name)
+
+        with self.contract(name=name, child_contracts=[],
+                           policy_rules=[]) as ct1:
+            with self.contract(name=name, child_contracts=[],
+                               policy_rules=[]) as ct2:
+                ct1_id = ct1['contract']['id']
+                ct2_id = ct2['contract']['id']
+                with self.endpoint_group(name=name,
+                                         provided_contracts=
+                                         {ct1_id: None},
+                                         consumed_contracts=
+                                         {ct2_id: None},) as epg:
+                    for k, v in attrs.iteritems():
+                        self.assertEqual(epg['endpoint_group'][k], v)
+            # TODO(Sumit): Test for readonly attrs
+
+    def test_show_endpoint_group(self):
+        name = "epg1"
+        attrs = self._get_test_endpoint_group_attrs(name)
+
+        with self.endpoint_group(name=name) as epg:
+            req = self.new_show_request('endpoint_groups',
+                                        epg['endpoint_group']['id'],
+                                        fmt=self.fmt)
+            res = self.deserialize(self.fmt,
+                                   req.get_response(self.ext_api))
+            for k, v in attrs.iteritems():
+                self.assertEqual(res['endpoint_group'][k], v)
+
+    def test_create_bridge_domain(self, **kwargs):
+        name = "bd1"
+        attrs = self._get_test_bridge_domain_attrs(name)
+
+        with self.routing_domain() as rd:
+            rd_id = rd['routing_domain']['id']
+            with self.bridge_domain(name=name, routing_domain_id=rd_id) as bd:
+                for k, v in attrs.iteritems():
+                    self.assertEqual(bd['bridge_domain'][k], v)
+
+    def test_show_bridge_domain(self):
+        name = "bd1"
+        attrs = self._get_test_bridge_domain_attrs(name)
+
+        with self.routing_domain() as rd:
+            rd_id = rd['routing_domain']['id']
+            with self.bridge_domain(name=name, routing_domain_id=rd_id) as bd:
+                req = self.new_show_request('bridge_domains',
+                                            bd['bridge_domain']['id'],
+                                            fmt=self.fmt)
+                res = self.deserialize(self.fmt,
+                                       req.get_response(self.ext_api))
+                for k, v in attrs.iteritems():
+                    self.assertEqual(res['bridge_domain'][k], v)
+
+    def test_create_routing_domain(self, **kwargs):
+        name = "rd1"
+        attrs = self._get_test_routing_domain_attrs(name)
+
+        with self.routing_domain(name=name) as rd:
+            for k, v in attrs.iteritems():
+                self.assertEqual(rd['routing_domain'][k], v)
+            # TODO(Sumit): Test for readonly attrs
+
+    def test_show_routing_domain(self, **kwargs):
+        name = "rd1"
+        attrs = self._get_test_routing_domain_attrs(name)
+
+        with self.routing_domain(name=name) as rd:
+            req = self.new_show_request('routing_domains',
+                                        rd['routing_domain']['id'],
+                                        fmt=self.fmt)
+            res = self.deserialize(self.fmt,
+                                   req.get_response(self.ext_api))
+            for k, v in attrs.iteritems():
+                self.assertEqual(res['routing_domain'][k], v)
+
+
+class TestGroupPolicyUnMappedResources(GroupPolicyDbTestCase):
+
+    def test_create_contract(self, **kwargs):
+        name = "ct1"
+        attrs = self._get_test_policy_rule_attrs(name)
+
+        with self.policy_classifier() as pc:
+            pc_id = pc['policy_classifier']['id']
+            with self.policy_action() as pa:
+                pa_id = pa['policy_action']['id']
+                with self.policy_rule(
+                    name=name, policy_classifier_id=pc_id,
+                    policy_actions=[pa_id]) as pr:
+                    pr_id = pr['policy_rule']['id']
+                    with self.contract(name=name, child_contracts=[],
+                                       policy_rules=[pr_id]) as ct:
+                        for k, v in attrs.iteritems():
+                            self.assertEqual(ct['contract'][k], v)
+
+    def test_create_contract_with_multiple_rules(self, **kwargs):
+        name = "ct1"
+        attrs = self._get_test_policy_rule_attrs(name)
+
+        with contextlib.nested(self.policy_classifier(name='pc1'),
+                               self.policy_classifier(name='pc2')) as pc:
+            pc1_id = pc[0]['policy_classifier']['id']
+            pc2_id = pc[1]['policy_classifier']['id']
+            with contextlib.nested(self.policy_rule(
+                name='pr1', policy_classifier_id=pc1_id),
+                self.policy_rule(name='pr2',
+                                 policy_classifier_id=pc2_id)) as pr:
+                pr_ids = [p['policy_rule']['id'] for p in pr]
+                with self.contract(name=name, child_contracts=[],
+                                   policy_rules=pr_ids) as ct:
+                    for k, v in attrs.iteritems():
+                        self.assertEqual(ct['contract'][k], v)
+
+    def test_update_contract_add_rule(self, **kwargs):
+        name = "ct1"
+        attrs = self._get_test_policy_rule_attrs(name)
+
+        with contextlib.nested(self.policy_classifier(name='pc1'),
+                               self.policy_classifier(name='pc2')) as pc:
+            pc1_id = pc[0]['policy_classifier']['id']
+            pc2_id = pc[1]['policy_classifier']['id']
+            with contextlib.nested(self.policy_rule(
+                name='pr1', policy_classifier_id=pc1_id),
+                self.policy_rule(name='pr2',
+                                 policy_classifier_id=pc2_id)) as pr:
+                pr_ids = [p['policy_rule']['id'] for p in pr]
+                with self.contract(name=name, child_contracts=[],
+                                   policy_rules=[pr_ids[0]]) as ct:
+                    attrs['policy_rules'] = pr_ids
+                    data = {'contract':
+                            {'policy_rules': pr_ids}}
+                    req = self.new_update_request('contracts', data,
+                                                  ct['contract']['id'])
+                    res = self.deserialize(self.fmt,
+                                           req.get_response(self.ext_api))
+                    for k, v in attrs.iteritems():
+                        self.assertEqual(res['contract'][k], v)
+
+    def test_create_child_contracts(self, **kwargs):
+        name = 'parent'
+        attrs = self._get_test_policy_rule_attrs(name)
+
+        with contextlib.nested(self.contract(name='c1'),
+                               self.contract(name='c2')) as children:
+            child_ids = [c['contract']['id'] for c in children]
+            with self.contract(name=name,
+                               child_contracts=child_ids) as parent:
+                parent_id = parent['contract']['id']
+                attrs['child_contracts'] = child_ids
+                for k, v in attrs.iteritems():
+                    self.assertEqual(parent['contract'][k], v)
+                req = self.new_show_request('contracts',
+                                            child_ids[0],
+                                            fmt=self.fmt)
+                c1 = self.deserialize(self.fmt,
+                                      req.get_response(self.ext_api))
+                self.assertEqual(c1['contract']['parent_id'],
+                                 parent_id)
+                req = self.new_show_request('contracts',
+                                            child_ids[1],
+                                            fmt=self.fmt)
+                c2 = self.deserialize(self.fmt,
+                                      req.get_response(self.ext_api))
+                self.assertEqual(c2['contract']['parent_id'],
+                                 parent_id)
+                req = self.new_show_request('contracts', parent_id,
+                                            fmt=self.fmt)
+                pr = self.deserialize(self.fmt, req.get_response(self.ext_api))
+                self.assertEqual(pr['contract']['child_contracts'],
+                                 child_ids)
+
+    def test_create_child_contract_fail(self, **kwargs):
+        name = "ct1"
+
+        res = self._create_contract(fmt=None, name=name, description="",
+                                    child_contracts=
+                                    ['00000000-ffff-ffff-ffff-000000000000'],
+                                    policy_rules=[], **kwargs)
+        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+
+    def test_create_policy_rule(self, **kwargs):
+        name = "pr1"
+        attrs = self._get_test_policy_rule_attrs(name)
+
+        with self.policy_classifier() as pc:
+            pc_id = pc['policy_classifier']['id']
+            with self.policy_action() as pa:
+                pa_id = pa['policy_action']['id']
+                with self.policy_rule(
+                    name=name, policy_classifier_id=pc_id,
+                    policy_actions=[pa_id]) as pr:
+                    for k, v in attrs.iteritems():
+                        self.assertEqual(pr['policy_rule'][k], v)
+
+    def test_create_policy_classifier(self, **kwargs):
+        name = "pc1"
+        attrs = self._get_test_policy_classifier_attrs(name)
+
+        with self.policy_classifier(name=name) as pc:
+            for k, v in attrs.iteritems():
+                self.assertEqual(pc['policy_classifier'][k], v)
+
+    def test_create_policy_action(self, **kwargs):
+        name = "pa1"
+        attrs = self._get_test_policy_action_attrs(name)
+
+        with self.policy_action(name=name) as pa:
+            for k, v in attrs.iteritems():
+                self.assertEqual(pa['policy_action'][k], v)
+
+
+# TODO(Sumit): XML tests

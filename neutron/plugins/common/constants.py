@@ -23,6 +23,7 @@ FIREWALL = "FIREWALL"
 VPN = "VPN"
 METERING = "METERING"
 L3_ROUTER_NAT = "L3_ROUTER_NAT"
+GROUP_POLICY = "GROUP_POLICY"
 
 
 #maps extension alias to service type
@@ -32,7 +33,8 @@ EXT_TO_SERVICE_MAPPING = {
     'fwaas': FIREWALL,
     'vpnaas': VPN,
     'metering': METERING,
-    'router': L3_ROUTER_NAT
+    'router': L3_ROUTER_NAT,
+    'gp': GROUP_POLICY,
 }
 
 # TODO(salvatore-orlando): Move these (or derive them) from conf file
@@ -47,6 +49,7 @@ COMMON_PREFIXES = {
     VPN: "/vpn",
     METERING: "/metering",
     L3_ROUTER_NAT: "",
+    GROUP_POLICY: "/gp",
 }
 
 # Service operation status constants
@@ -83,3 +86,15 @@ TYPE_NONE = 'none'
 
 # The maximum length of an interface name (in Linux)
 MAX_DEV_NAME_LEN = 16
+
+# Group Policy constants
+GP_ALLOW = "allow"
+GP_REDIRECT = "redirect"
+GP_DIRECTION_IN = 'in'
+GP_DIRECTION_OUT = 'out'
+GP_DIRECTION_BI = 'bi'
+GP_PROVIDES = "provides"
+GP_CONSUMES = "consumes"
+GP_GLOBAL = "global"
+GP_TENANT = "tenant"
+GP_EPG = "epg"
