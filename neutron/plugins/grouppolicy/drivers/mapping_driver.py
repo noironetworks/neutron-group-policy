@@ -88,6 +88,78 @@ class MappingDriver(api.PolicyDriver):
         LOG.info("delete_endpoint_postcommit: %s", context.current)
 
     @log.log
+    def create_policy_rule_precommit(self, context):
+        LOG.info("create_policy_rule_precommit: %s", context.current)
+
+    @log.log
+    def create_policy_rule_postcommit(self, context):
+        LOG.info("create_policy_rule_postcommit: %s", context.current)
+
+    @log.log
+    def update_policy_rule_precommit(self, context):
+        LOG.info("update_policy_rule_precommit: %s", context.current)
+
+    @log.log
+    def update_policy_rule_postcommit(self, context):
+        LOG.info("update_policy_rule_postcommit: %s", context.current)
+
+    @log.log
+    def delete_policy_rule_precommit(self, context):
+        LOG.info("delete_policy_rule_precommit: %s", context.current)
+
+    @log.log
+    def delete_policy_rule_postcommit(self, context):
+        LOG.info("delete_policy_rule_postcommit: %s", context.current)
+
+    @log.log
+    def create_policy_classifier_precommit(self, context):
+        LOG.info("create_policy_classifier_precommit: %s", context.current)
+
+    @log.log
+    def create_policy_classifier_postcommit(self, context):
+        LOG.info("create_policy_classifier_postcommit: %s", context.current)
+
+    @log.log
+    def update_policy_classifier_precommit(self, context):
+        LOG.info("update_policy_classifier_precommit: %s", context.current)
+
+    @log.log
+    def update_policy_classifier_postcommit(self, context):
+        LOG.info("update_policy_classifier_postcommit: %s", context.current)
+
+    @log.log
+    def delete_policy_classifier_precommit(self, context):
+        LOG.info("delete_policy_classifier_precommit: %s", context.current)
+
+    @log.log
+    def delete_policy_classifier_postcommit(self, context):
+        LOG.info("delete_policy_classifier_postcommit: %s", context.current)
+
+    @log.log
+    def create_policy_action_precommit(self, context):
+        LOG.info("create_policy_action_precommit: %s", context.current)
+
+    @log.log
+    def create_policy_action_postcommit(self, context):
+        LOG.info("create_policy_action_postcommit: %s", context.current)
+
+    @log.log
+    def update_policy_action_precommit(self, context):
+        LOG.info("update_policy_action_precommit: %s", context.current)
+
+    @log.log
+    def update_policy_action_postcommit(self, context):
+        LOG.info("update_policy_action_postcommit: %s", context.current)
+
+    @log.log
+    def delete_policy_action_precommit(self, context):
+        LOG.info("delete_policy_action_precommit: %s", context.current)
+
+    @log.log
+    def delete_policy_action_postcommit(self, context):
+        LOG.info("delete_policy_action_postcommit: %s", context.current)
+
+    @log.log
     def create_endpoint_group_precommit(self, context):
         LOG.info("create_endpoint_group_precommit: %s", context.current)
         if context.current['neutron_subnets']:
