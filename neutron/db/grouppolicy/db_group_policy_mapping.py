@@ -153,7 +153,8 @@ class GroupPolicyMappingDbMixin(gpolicy_db.GroupPolicyDbMixin):
     def _make_endpoint_group_dict(self, epg, fields=None):
         res = super(GroupPolicyMappingDbMixin,
                     self)._make_endpoint_group_dict(epg)
-        res['neutron_subnets'] = copy.copy(epg['neutron_subnets'])
+        res['neutron_subnets'] = [subnet['neutron_subnet_id']
+                                  for subnet in epg['neutron_subnets']]
         return self._fields(res, fields)
 
     def _make_bridge_domain_dict(self, bd, fields=None):
@@ -166,6 +167,8 @@ class GroupPolicyMappingDbMixin(gpolicy_db.GroupPolicyDbMixin):
         res = super(GroupPolicyMappingDbMixin,
                     self)._make_routing_domain_dict(rd)
         res['neutron_routers'] = rd['neutron_routers']
+        res['neutron_routers'] = [router['neutron_router_id']
+                                  for router in rd['neutron_routers']]
         return self._fields(res, fields)
 
     def _set_port_for_endpoint(self, context, ep_id, port_id):
