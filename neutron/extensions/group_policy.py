@@ -326,7 +326,8 @@ RESOURCE_ATTRIBUTE_MAP = {
                     'is_visible': True},
         'contract_filter_id': {'allow_post': True, 'allow_put': True,
                                'validate': {'type:uuid_or_none': None},
-                               'required': False, 'is_visible': True},
+                               'required': False, 'default': None,
+                               'is_visible': True},
         'policy_classifier_id': {'allow_post': True, 'allow_put': True,
                                  'validate': {'type:uuid': None},
                                  'required': True, 'is_visible': True},
@@ -407,7 +408,7 @@ RESOURCE_ATTRIBUTE_MAP = {
                         'is_visible': True, 'default': 'allow'},
         'action_value': {'allow_post': True, 'allow_put': True,
                          'validate': {'type:uuid_or_none': None},
-                         'is_visible': True},
+                         'default': None, 'is_visible': True},
     },
     ENDPOINT_GROUP_SELECTORS: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -450,9 +451,6 @@ RESOURCE_ATTRIBUTE_MAP = {
         'namespace': {'allow_post': True, 'allow_put': True,
                       'validate': {'type:string': None},
                       'is_visible': True, 'default': ''},
-        'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
-                 'is_visible': True, 'required': True},
     },
     BRIDGE_DOMAINS: {
         'id': {'allow_post': False, 'allow_put': False,
