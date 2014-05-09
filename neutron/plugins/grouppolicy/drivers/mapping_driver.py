@@ -427,5 +427,10 @@ class MappingDriver(api.PolicyDriver):
         # TODO(s3wong): if firewall already enabled, action has no effect
         if firewall['admin_state_up'] == True:
             LOG.info("firewall %s admin state already up", fw_id)
-        firewall['admin_state_up'] = True
-        fw_plugin.update_firewall(context._plugin_context, fw_id, firewall)
+        attrs = {'firewall':
+                 {'tenant_id': firewall['tenant_id'],
+                  'name': firewall['name'],
+                  'description' : firewall['description'],
+                  'admin_state_up' : True,
+                  'firewall_policy_id' : firewall['firewall_policy_id']}}
+        fw_plugin.update_firewall(context._plugin_context, fw_id, attrs)
