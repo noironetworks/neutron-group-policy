@@ -88,6 +88,30 @@ class MappingDriver(api.PolicyDriver):
         LOG.info("delete_endpoint_postcommit: %s", context.current)
 
     @log.log
+    def create_contract_precommit(self, context):
+        LOG.info("create_contract_precommit: %s", context.current)
+
+    @log.log
+    def create_contract_postcommit(self, context):
+        LOG.info("create_contract_postcommit: %s", context.current)
+
+    @log.log
+    def update_contract_precommit(self, context):
+        LOG.info("update_contract_precommit: %s", context.current)
+
+    @log.log
+    def update_contract_postcommit(self, context):
+        LOG.info("update_contract_postcommit: %s", context.current)
+
+    @log.log
+    def delete_contract_precommit(self, context):
+        LOG.info("delete_contract_precommit: %s", context.current)
+
+    @log.log
+    def delete_contract_postcommit(self, context):
+        LOG.info("delete_contract_postcommit: %s", context.current)
+
+    @log.log
     def create_policy_rule_precommit(self, context):
         LOG.info("create_policy_rule_precommit: %s", context.current)
 
