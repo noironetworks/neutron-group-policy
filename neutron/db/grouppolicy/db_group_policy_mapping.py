@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import copy
 import netaddr
 
 import sqlalchemy as sa
@@ -166,7 +165,6 @@ class GroupPolicyMappingDbMixin(gpolicy_db.GroupPolicyDbMixin):
     def _make_routing_domain_dict(self, rd, fields=None):
         res = super(GroupPolicyMappingDbMixin,
                     self)._make_routing_domain_dict(rd)
-        res['neutron_routers'] = rd['neutron_routers']
         res['neutron_routers'] = [router['neutron_router_id']
                                   for router in rd['neutron_routers']]
         return self._fields(res, fields)
@@ -207,7 +205,7 @@ class GroupPolicyMappingDbMixin(gpolicy_db.GroupPolicyDbMixin):
         # raise exception if subnet overlaps any other subnets in
         # RD. Or come up with better way to atomically allocate
         # subnets from RD's supernet.
-        return copy.copy(epg_db.neutron_subnets)
+        return [subnet.neutron_subnet_id for subnet in epg_db.neutron_subnets]
 
     def _add_router_to_routing_domain(self, context, rd_id, router_id):
         with context.session.begin(subtransactions=True):
@@ -215,7 +213,7 @@ class GroupPolicyMappingDbMixin(gpolicy_db.GroupPolicyDbMixin):
             assoc = RoutingDomainRouterAssociation(routing_domain_id=rd_id,
                                                    neutron_router_id=router_id)
             rd_db.neutron_routers.append(assoc)
-        return copy.copy(rd_db.neutron_routers)
+        return [router.neutron_router_id for router in rd_db.neutron_routers]
 
     @log.log
     def create_endpoint(self, context, endpoint):
