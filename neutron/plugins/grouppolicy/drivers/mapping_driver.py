@@ -142,6 +142,9 @@ class MappingDriver(api.PolicyDriver):
     @log.log
     def create_policy_action_postcommit(self, context):
         LOG.info("create_policy_action_postcommit: %s", context.current)
+        action_type = context.current['action_type']
+        if action_type == pconst.GP_REDIRECT:
+            self._handle_redirect_action(context)
 
     @log.log
     def update_policy_action_precommit(self, context):
@@ -384,3 +387,21 @@ class MappingDriver(api.PolicyDriver):
         core_plugin = manager.NeutronManager.get_plugin()
         port = core_plugin.create_port(context._plugin_context, attrs)
         context.set_neutron_port_id(port['id'])
+
+    def _handle_redirect_action(self, context):
+        # TODO(s3wong): assuming redirect to firewall only
+        fw_id = context.current['action_value']
+        LOG.info("fw_id is %s", fw_id)
+        plugins = manager.NeutronManager.get_service_plugins()
+        fw_plugin = plugins.get(pconst.FIREWALL)
+        if not fw_plugin:
+            raise Exception(_("No Firewall service plugin found."))
+        firewall = fw_plugin.get_firewall(context._plugin_context, fw_id)
+        if not firewall:
+            raise Exception(_("Firewall not found."))
+
+        # TODO(s3wong): if firewall already enabled, action has no effect
+        if firewall['admin_state_up'] == True:
+            LOG.info("firewall %s admin state already up", fw_id)
+        firewall['admin_state_up'] = True
+        fw_plugin.update_firewall(context._plugin_context, fw_id, firewall)
