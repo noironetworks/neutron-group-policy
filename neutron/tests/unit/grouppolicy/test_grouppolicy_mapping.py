@@ -43,6 +43,7 @@ class TestGroupPolicyMapping(GroupPolicyMappingTestCase):
             self.assertIsNotNone(subnets)
             self.assertEqual(len(subnets), 1)
             # TODO(rkukura): Verify subnet details
+            # TODO(rkukura): Verify router interface added
             epg_id = epg['endpoint_group']['id']
 
             with self.endpoint(name="ep1", endpoint_group_id=epg_id) as ep:
@@ -57,6 +58,7 @@ class TestGroupPolicyMapping(GroupPolicyMappingTestCase):
             self.assertIsNotNone(routers)
             self.assertEqual(len(routers), 1)
             # TODO(rkukura): Verify subnet details
+            # TODO(rkukura): Verify router interface added
             rd_id = rd['routing_domain']['id']
 
             with self.bridge_domain(name="bd1",

@@ -334,6 +334,10 @@ class MappingDriver(api.PolicyDriver):
                   'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                   'host_routes': attributes.ATTR_NOT_SPECIFIED}}
         core_plugin = manager.NeutronManager.get_plugin()
+        plugins = manager.NeutronManager.get_service_plugins()
+        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
+        if not l3_plugin:
+            raise Exception(_("No L3 router service plugin found."))
         subnet = None
         for cidr in supernet.subnet(rd['subnet_prefix_length']):
             if context.is_cidr_available(cidr):
@@ -342,6 +346,10 @@ class MappingDriver(api.PolicyDriver):
                     subnet = core_plugin.create_subnet(context._plugin_context,
                                                        attrs)
                     try:
+                        router = rd['neutron_routers'][0]
+                        interface_info = {'subnet_id': subnet['id']}
+                        l3_plugin.add_router_interface(context._plugin_context,
+                                                       router, interface_info)
                         context.add_neutron_subnet(subnet['id'])
                         return
                     except Exception:
