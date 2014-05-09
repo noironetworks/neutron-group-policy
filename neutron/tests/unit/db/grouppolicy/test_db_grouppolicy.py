@@ -484,6 +484,35 @@ class TestGroupPolicyUnMappedResources(GroupPolicyDbTestCase):
                         for k, v in attrs.iteritems():
                             self.assertEqual(ct['contract'][k], v)
 
+    def test_create_child_contracts(self, **kwargs):
+        name = 'parent'
+        attrs = self._get_test_policy_rule_attrs(name)
+
+        with contextlib.nested(self.contract(name='c1'),
+                               self.contract(name='c2')) as children:
+            child_ids = [c['contract']['id'] for c in children]
+            with self.contract(name=name,
+                               child_contracts=child_ids) as parent:
+                parent_id = parent['contract']['id']
+                for k, v in attrs.iteritems():
+                    self.assertEqual(parent['contract'][k], v)
+                req = self.new_show_request('contracts',
+                                            child_ids[0],
+                                            fmt=self.fmt)
+                res = self.deserialize(self.fmt,
+                                       req.get_response(self.ext_api))
+                self.assertEqual(res['contract']['parent_id'],
+                                 parent_id)
+
+    def test_create_child_contract_fail(self, **kwargs):
+        name = "ct1"
+
+        res = self._create_contract(fmt=None, name=name, description="",
+                                    child_contracts=
+                                    ['00000000-ffff-ffff-ffff-000000000000'],
+                                    policy_rules=[], **kwargs)
+        self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+
     def test_create_policy_rule(self, **kwargs):
         name = "pr1"
         attrs = self._get_test_policy_rule_attrs(name)

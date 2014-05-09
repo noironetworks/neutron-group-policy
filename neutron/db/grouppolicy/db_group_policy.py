@@ -192,9 +192,9 @@ class Contract(model_base.BASEV2, models_v2.HasTenant):
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(1024))
     # TODO(Sumit): Revisit parent and child relationships
-    parent_id = sa.Column(sa.String(255), sa.ForeignKey('gp_contracts.id'),
-                          nullable=True, unique=True)
-    child_contracts = orm.relationship("Contract",
+    child_id = sa.Column(sa.String(255), sa.ForeignKey('gp_contracts.id'),
+                         nullable=True)
+    child_contracts = orm.relationship('Contract',
                                        backref=orm.backref('parent',
                                                            remote_side=[id]))
     policy_rules = orm.relationship(ContractPolicyRuleAssociation,
@@ -419,6 +419,31 @@ class GroupPolicyDbMixin(gpolicy.GroupPolicyPluginBase,
                     epg_db.consumed_contracts.append(assoc)
                 # TODO(Sumit): Check if this is getting added properly
 
+    def _set_children_for_contract(self, context, contract_db, child_id_list):
+        ct_db = contract_db
+        if not child_id_list:
+            ct_db.child_contracts = []
+            return
+        with context.session.begin(subtransactions=True):
+            # We will first check if the new list of contracts is valid
+            filters = {'id': [c_id for c_id in child_id_list]}
+            contracts_in_db = self._get_collection_query(context, Contract,
+                                                         filters=filters)
+            contracts_dict = dict((c_db['id'],
+                                   c_db) for c_db in contracts_in_db)
+            for contract_id in child_id_list:
+                if contract_id not in contracts_dict:
+                    # If we find an invalid contract in the list we
+                    # do not perform the update
+                    raise gpolicy.ContractNotFound(contract_id=contract_id)
+            # New list of child contracts is valid so we will first reset the
+            # existing # list and then add each contract.
+            # Note that the list could be empty in which case we interpret
+            # it as clearing existing child contracts.
+            ct_db.child_contracts = []
+            for child in contracts_in_db:
+                ct_db.child_contracts.append(child)
+
     def _set_rules_for_contract(self, context, contract_db, rule_id_list):
         ct_db = contract_db
         if not rule_id_list:
@@ -433,8 +458,7 @@ class GroupPolicyDbMixin(gpolicy.GroupPolicyPluginBase,
             for rule_id in rule_id_list:
                 if rule_id not in rules_dict:
                     # If we find an invalid rule in the list we
-                    # do not perform the update since this breaks
-                    # the integrity of this list.
+                    # do not perform the update
                     raise gpolicy.PolicyRuleNotFound(policy_rule_id=rule_id)
             # New list of rules is valid so we will first reset the existing
             # list and then add each rule in order.
@@ -462,8 +486,7 @@ class GroupPolicyDbMixin(gpolicy.GroupPolicyPluginBase,
             for action_id in action_id_list:
                 if action_id not in actions_dict:
                     # If we find an invalid action in the list we
-                    # do not perform the update since this breaks
-                    # the integrity of this list.
+                    # do not perform the update
                     raise gpolicy.PolicyActionNotFound(policy_action_id=
                                                        action_id)
             # New list of actions is valid so we will first reset the existing
@@ -502,8 +525,11 @@ class GroupPolicyDbMixin(gpolicy.GroupPolicyPluginBase,
         res = {'id': ct['id'],
                'tenant_id': ct['tenant_id'],
                'name': ct['name'],
-               'description': ct['description'],
-               'parent_id': ct['parent_id']}
+               'description': ct['description']}
+        if ct['parent']:
+            res['parent_id'] = ct['parent']['id']
+        else:
+            res['parent_id'] = None
         res['child_contracts'] = [ct['id']
                                   for ch in ct['child_contracts']]
         res['policy_rules'] = [pr['policy_rule_id']
@@ -684,6 +710,8 @@ class GroupPolicyDbMixin(gpolicy.GroupPolicyPluginBase,
             context.session.add(ct_db)
             self._set_rules_for_contract(context, ct_db,
                                          ct['policy_rules'])
+            self._set_children_for_contract(context, ct_db,
+                                            ct['child_contracts'])
         return self._make_contract_dict(ct_db)
 
     @log.log
@@ -697,6 +725,10 @@ class GroupPolicyDbMixin(gpolicy.GroupPolicyPluginBase,
                 self._set_rules_for_contract(context, ct_db,
                                              ct['policy_rules'])
                 del ct['policy_rules']
+            if 'child_contracts' in ct:
+                self._set_children_for_contract(context, ct_db,
+                                                ct['child_contracts'])
+                del ct['child_contracts']
             ct_db.update(ct)
         return self._make_contract_dict(ct_db)
 
