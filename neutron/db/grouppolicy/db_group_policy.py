@@ -56,7 +56,7 @@ class EndpointGroupContractProvidingAssociation(model_base.BASEV2):
                             primary_key=True)
     endpoint_group_id = sa.Column(sa.String(36),
                                   sa.ForeignKey('gp_endpoint_groups.id'),
-                                  nullable=True, unique=True)
+                                  primary_key=True)
 
 
 class EndpointGroupContractConsumingAssociation(model_base.BASEV2):
@@ -67,7 +67,7 @@ class EndpointGroupContractConsumingAssociation(model_base.BASEV2):
                             primary_key=True)
     endpoint_group_id = sa.Column(sa.String(36),
                                   sa.ForeignKey('gp_endpoint_groups.id'),
-                                  nullable=True, unique=True)
+                                  primary_key=True)
 
 
 class ContractScope(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -179,7 +179,7 @@ class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     # TODO(Sumit): Add foreign key constraints
     # TODO(Sumit): Revisit when other action_types are defined
     action_value = sa.Column(sa.String(36),
-                             nullable=True, unique=True)
+                             nullable=True)
     policy_rules = orm.relationship(PolicyRuleActionAssociation,
                                     cascade='all', backref='gp_policy_actions')
 
@@ -548,8 +548,9 @@ class GroupPolicyDbMixin(gpolicy.GroupPolicyPluginBase,
                'tenant_id': bd['tenant_id'],
                'name': bd['name'],
                'description': bd['description'],
-               'routing_domain_id': bd['routing_domain_id'],
-               'endpoint_groups': bd['endpoint_groups']}
+               'routing_domain_id': bd['routing_domain_id']}
+        res['endpoint_groups'] = [epg['id']
+                                  for epg in bd['endpoint_groups']]
         return self._fields(res, fields)
 
     def _make_routing_domain_dict(self, rd, fields=None):
@@ -559,8 +560,9 @@ class GroupPolicyDbMixin(gpolicy.GroupPolicyPluginBase,
                'description': rd['description'],
                'ip_version': rd['ip_version'],
                'ip_supernet': rd['ip_supernet'],
-               'subnet_prefix_length': rd['subnet_prefix_length'],
-               'bridge_domains': rd['bridge_domains']}
+               'subnet_prefix_length': rd['subnet_prefix_length']}
+        res['bridge_domains'] = [bd['id']
+                                 for bd in rd['bridge_domains']]
         return self._fields(res, fields)
 
     @log.log
