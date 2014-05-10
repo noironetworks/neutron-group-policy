@@ -241,8 +241,11 @@ class GroupPolicyMappingDbMixin(gpolicy_db.GroupPolicyDbMixin):
                 name=epg['name'],
                 description=epg['description'],
                 bridge_domain_id=epg['bridge_domain_id'])
-            # TODO(Sumit): Process subnets
             context.session.add(epg_db)
+            self._set_providers_or_consumers_for_endpoint_group(
+                context, epg_db, epg['provided_contracts'])
+            self._set_providers_or_consumers_for_endpoint_group(
+                context, epg_db, epg['consumed_contracts'], False)
         return self._make_endpoint_group_dict(epg_db)
 
     @log.log
