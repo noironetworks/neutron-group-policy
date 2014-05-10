@@ -425,6 +425,13 @@ class TestGroupPolicyMappedResources(GroupPolicyDbTestCase):
             with self.endpoint(name=name, endpoint_group_id=epg_id) as ep:
                 for k, v in attrs.iteritems():
                     self.assertEqual(ep['endpoint'][k], v)
+                req = self.new_show_request('endpoint_groups',
+                                            epg_id,
+                                            fmt=self.fmt)
+                res = self.deserialize(self.fmt,
+                                       req.get_response(self.ext_api))
+                self.assertEqual(res['endpoint_group']['endpoints'],
+                                 [ep['endpoint']['id']])
 
     def test_create_endpoint_group(self, **kwargs):
         name = "epg1"
