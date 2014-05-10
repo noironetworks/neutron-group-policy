@@ -192,8 +192,8 @@ class Contract(model_base.BASEV2, models_v2.HasTenant):
     name = sa.Column(sa.String(255))
     description = sa.Column(sa.String(1024))
     # TODO(Sumit): Revisit parent and child relationships
-    child_id = sa.Column(sa.String(255), sa.ForeignKey('gp_contracts.id'),
-                         nullable=True)
+    parent_id = sa.Column(sa.String(255), sa.ForeignKey('gp_contracts.id'),
+                          nullable=True)
     child_contracts = orm.relationship('Contract',
                                        backref=orm.backref('parent',
                                                            remote_side=[id]))
@@ -515,6 +515,8 @@ class GroupPolicyDbMixin(gpolicy.GroupPolicyPluginBase,
                'description': epg['description'],
                'bridge_domain_id': epg['bridge_domain_id'],
                'endpoints': epg['endpoints']}
+        res['endpoints'] = [ep['id']
+                            for ep in epg['endpoints']]
         res['provided_contracts'] = [ct['contract_id']
                                      for ct in epg['provided_contracts']]
         res['consumed_contracts'] = [ct['contract_id']
