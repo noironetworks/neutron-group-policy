@@ -501,15 +501,28 @@ class TestGroupPolicyUnMappedResources(GroupPolicyDbTestCase):
             with self.contract(name=name,
                                child_contracts=child_ids) as parent:
                 parent_id = parent['contract']['id']
+                attrs['child_contracts'] = child_ids
                 for k, v in attrs.iteritems():
                     self.assertEqual(parent['contract'][k], v)
                 req = self.new_show_request('contracts',
                                             child_ids[0],
                                             fmt=self.fmt)
-                res = self.deserialize(self.fmt,
-                                       req.get_response(self.ext_api))
-                self.assertEqual(res['contract']['parent_id'],
+                c1 = self.deserialize(self.fmt,
+                                      req.get_response(self.ext_api))
+                self.assertEqual(c1['contract']['parent_id'],
                                  parent_id)
+                req = self.new_show_request('contracts',
+                                            child_ids[1],
+                                            fmt=self.fmt)
+                c2 = self.deserialize(self.fmt,
+                                      req.get_response(self.ext_api))
+                self.assertEqual(c2['contract']['parent_id'],
+                                 parent_id)
+                req = self.new_show_request('contracts', parent_id,
+                                            fmt=self.fmt)
+                pr = self.deserialize(self.fmt, req.get_response(self.ext_api))
+                self.assertEqual(pr['contract']['child_contracts'],
+                                 child_ids)
 
     def test_create_child_contract_fail(self, **kwargs):
         name = "ct1"
