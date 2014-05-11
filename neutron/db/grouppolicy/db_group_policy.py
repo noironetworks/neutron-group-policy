@@ -1,6 +1,3 @@
-# Copyright (c) 2014 OpenStack Foundation.
-# All Rights Reserved.
-#
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
@@ -19,6 +16,7 @@ from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
 from neutron.common import log
+from neutron import context
 from neutron.db import api as db
 from neutron.db import db_base_plugin_v2
 from neutron.db import model_base
@@ -532,8 +530,14 @@ class GroupPolicyDbMixin(gpolicy.GroupPolicyPluginBase,
             res['parent_id'] = ct['parent']['id']
         else:
             res['parent_id'] = None
-        res['child_contracts'] = [ct['id']
-                                  for ch in ct['child_contracts']]
+        ctx = context.get_admin_context()
+        with ctx.session.begin(subtransactions=True):
+            filters = {'parent_id': [ct['id']]}
+            child_contracts_in_db = self._get_collection_query(ctx, Contract,
+                                                               filters=filters)
+            res['child_contracts'] = [child_ct['id']
+                                      for child_ct in child_contracts_in_db]
+
         res['policy_rules'] = [pr['policy_rule_id']
                                for pr in ct['policy_rules']]
         return self._fields(res, fields)
