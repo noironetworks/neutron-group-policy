@@ -202,7 +202,7 @@ class Contract(model_base.BASEV2, models_v2.HasTenant):
                                     'ContractPolicyRuleAssociation.position',
                                     collection_class=
                                     ordering_list('position', count_from=1),
-                                    cascade='all')
+                                    cascade='all, delete-orphan')
     providing_endpoint_groups = orm.relationship(
         EndpointGroupContractProvidingAssociation, backref='gp_contracts',
         lazy="joined", cascade='all')
