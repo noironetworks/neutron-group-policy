@@ -491,6 +491,49 @@ class TestGroupPolicyUnMappedResources(GroupPolicyDbTestCase):
                         for k, v in attrs.iteritems():
                             self.assertEqual(ct['contract'][k], v)
 
+    def test_create_contract_with_multiple_rules(self, **kwargs):
+        name = "ct1"
+        attrs = self._get_test_policy_rule_attrs(name)
+
+        with contextlib.nested(self.policy_classifier(name='pc1'),
+                               self.policy_classifier(name='pc2')) as pc:
+            pc1_id = pc[0]['policy_classifier']['id']
+            pc2_id = pc[1]['policy_classifier']['id']
+            with contextlib.nested(self.policy_rule(
+                name='pr1', policy_classifier_id=pc1_id),
+                self.policy_rule(name='pr2',
+                                 policy_classifier_id=pc2_id)) as pr:
+                pr_ids = [p['policy_rule']['id'] for p in pr]
+                with self.contract(name=name, child_contracts=[],
+                                   policy_rules=pr_ids) as ct:
+                    for k, v in attrs.iteritems():
+                        self.assertEqual(ct['contract'][k], v)
+
+    def test_update_contract_add_rule(self, **kwargs):
+        name = "ct1"
+        attrs = self._get_test_policy_rule_attrs(name)
+
+        with contextlib.nested(self.policy_classifier(name='pc1'),
+                               self.policy_classifier(name='pc2')) as pc:
+            pc1_id = pc[0]['policy_classifier']['id']
+            pc2_id = pc[1]['policy_classifier']['id']
+            with contextlib.nested(self.policy_rule(
+                name='pr1', policy_classifier_id=pc1_id),
+                self.policy_rule(name='pr2',
+                                 policy_classifier_id=pc2_id)) as pr:
+                pr_ids = [p['policy_rule']['id'] for p in pr]
+                with self.contract(name=name, child_contracts=[],
+                                   policy_rules=[pr_ids[0]]) as ct:
+                    attrs['policy_rules'] = pr_ids
+                    data = {'contract':
+                            {'policy_rules': pr_ids}}
+                    req = self.new_update_request('contracts', data,
+                                                  ct['contract']['id'])
+                    res = self.deserialize(self.fmt,
+                                           req.get_response(self.ext_api))
+                    for k, v in attrs.iteritems():
+                        self.assertEqual(res['contract'][k], v)
+
     def test_create_child_contracts(self, **kwargs):
         name = 'parent'
         attrs = self._get_test_policy_rule_attrs(name)
