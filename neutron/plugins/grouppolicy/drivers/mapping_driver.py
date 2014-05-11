@@ -430,7 +430,7 @@ class MappingDriver(api.PolicyDriver):
         attrs = {'firewall':
                  {'tenant_id': firewall['tenant_id'],
                   'name': firewall['name'],
-                  'description' : firewall['description'],
-                  'admin_state_up' : True,
-                  'firewall_policy_id' : firewall['firewall_policy_id']}}
+                  'description': firewall['description'],
+                  'admin_state_up': True,
+                  'firewall_policy_id': firewall['firewall_policy_id']}}
         fw_plugin.update_firewall(context._plugin_context, fw_id, attrs)
