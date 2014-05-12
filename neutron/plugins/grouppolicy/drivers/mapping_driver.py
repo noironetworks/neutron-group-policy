@@ -274,62 +274,68 @@ class MappingDriver(api.PolicyDriver):
     def delete_routing_domain_postcommit(self, context):
         LOG.info("delete_routing_domain_postcommit: %s", context.current)
 
+    @property
+    def _core_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        return manager.NeutronManager.get_plugin()
+
     def _create_network(self, context, attrs):
-        core_plugin = manager.NeutronManager.get_plugin()
-        network = core_plugin.create_network(context._plugin_context, attrs)
+        network = self._core_plugin.create_network(context._plugin_context,
+                                                   attrs)
         LOG.info("created network: %s" % network)
         return network
 
     def _create_subnet(self, context, attrs):
-        core_plugin = manager.NeutronManager.get_plugin()
-        subnet = core_plugin.create_subnet(context._plugin_context, attrs)
+        subnet = self._core_plugin.create_subnet(context._plugin_context,
+                                                 attrs)
         LOG.info("created subnet: %s" % subnet)
         return subnet
 
     def _delete_subnet(self, context, id):
-        core_plugin = manager.NeutronManager.get_plugin()
-        core_plugin.delete_subnet(context._plugin_context, id)
+        self._core_plugin.delete_subnet(context._plugin_context, id)
         LOG.info("deleted subnet: %s" % id)
 
     def _create_port(self, context, attrs):
-        core_plugin = manager.NeutronManager.get_plugin()
-        port = core_plugin.create_port(context._plugin_context, attrs)
+        port = self._core_plugin.create_port(context._plugin_context, attrs)
         LOG.info("created port: %s" % port)
         return port
 
-    def _create_router(self, context, attrs):
+    @property
+    def _l3_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
         plugins = manager.NeutronManager.get_service_plugins()
         l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
         if not l3_plugin:
             raise Exception(_("No L3 router service plugin found."))
-        router = l3_plugin.create_router(context._plugin_context, attrs)
+        return l3_plugin
+
+    def _create_router(self, context, attrs):
+        router = self._l3_plugin.create_router(context._plugin_context, attrs)
         LOG.info("created router: %s" % router)
         return router
 
     def _add_router_interface(self, context, router_id, interface_info):
+        self._l3_plugin.add_router_interface(context._plugin_context,
+                                             router_id, interface_info)
+
+    @property
+    def _fw_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
         plugins = manager.NeutronManager.get_service_plugins()
-        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
-        if not l3_plugin:
-            raise Exception(_("No L3 router service plugin found."))
-        l3_plugin.add_router_interface(context._plugin_context, router_id,
-                                       interface_info)
+        fw_plugin = plugins.get(pconst.FIREWALL)
+        if not fw_plugin:
+            raise Exception(_("No Firewall service plugin found."))
+        return fw_plugin
 
     def _get_firewall(self, context, fw_id):
-        plugins = manager.NeutronManager.get_service_plugins()
-        fw_plugin = plugins.get(pconst.FIREWALL)
-        if not fw_plugin:
-            raise Exception(_("No Firewall service plugin found."))
-        firewall = fw_plugin.get_firewall(context._plugin_context, fw_id)
-        return firewall
+        return self._fw_plugin.get_firewall(context._plugin_context, fw_id)
 
     def _update_firewall(self, context, fw_id, attrs):
-        plugins = manager.NeutronManager.get_service_plugins()
-        fw_plugin = plugins.get(pconst.FIREWALL)
-        if not fw_plugin:
-            raise Exception(_("No Firewall service plugin found."))
-        firewall = fw_plugin.update_firewall(context._plugin_context, fw_id,
-                                             attrs)
-        return firewall
+        return self._fw_plugin.update_firewall(context._plugin_context, fw_id,
+                                               attrs)
 
     def _validate_rd_routers(self, context):
         # TODO(rkukura): Implement
