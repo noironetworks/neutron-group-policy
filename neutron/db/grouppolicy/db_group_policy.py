@@ -42,7 +42,7 @@ class Endpoint(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     description = sa.Column(sa.String(1024))
     endpoint_group_id = sa.Column(sa.String(36),
                                   sa.ForeignKey('gp_endpoint_groups.id'),
-                                  nullable=True, unique=True)
+                                  nullable=True)
     # TODO(Sumit): Add policy_label
 
 
@@ -97,7 +97,7 @@ class EndpointGroup(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
         backref='gp_endpoint_groups', cascade='all')
     bridge_domain_id = sa.Column(sa.String(36),
                                  sa.ForeignKey('gp_bridge_domains.id'),
-                                 nullable=True, unique=True)
+                                 nullable=True)
     # TODO(Sumit): Add policy_label
 
 
@@ -228,7 +228,7 @@ class BridgeDomain(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     endpoint_groups = orm.relationship(EndpointGroup, backref='bridge_domain')
     routing_domain_id = sa.Column(sa.String(36),
                                   sa.ForeignKey('gp_routing_domains.id'),
-                                  nullable=True, unique=True)
+                                  nullable=True)
 
 
 class RoutingDomain(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
