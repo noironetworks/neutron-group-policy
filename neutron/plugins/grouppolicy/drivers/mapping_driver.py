@@ -274,6 +274,63 @@ class MappingDriver(api.PolicyDriver):
     def delete_routing_domain_postcommit(self, context):
         LOG.info("delete_routing_domain_postcommit: %s", context.current)
 
+    def _create_network(self, context, attrs):
+        core_plugin = manager.NeutronManager.get_plugin()
+        network = core_plugin.create_network(context._plugin_context, attrs)
+        LOG.info("created network: %s" % network)
+        return network
+
+    def _create_subnet(self, context, attrs):
+        core_plugin = manager.NeutronManager.get_plugin()
+        subnet = core_plugin.create_subnet(context._plugin_context, attrs)
+        LOG.info("created subnet: %s" % subnet)
+        return subnet
+
+    def _delete_subnet(self, context, id):
+        core_plugin = manager.NeutronManager.get_plugin()
+        core_plugin.delete_subnet(context._plugin_context, id)
+        LOG.info("deleted subnet: %s" % id)
+
+    def _create_port(self, context, attrs):
+        core_plugin = manager.NeutronManager.get_plugin()
+        port = core_plugin.create_port(context._plugin_context, attrs)
+        LOG.info("created port: %s" % port)
+        return port
+
+    def _create_router(self, context, attrs):
+        plugins = manager.NeutronManager.get_service_plugins()
+        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
+        if not l3_plugin:
+            raise Exception(_("No L3 router service plugin found."))
+        router = l3_plugin.create_router(context._plugin_context, attrs)
+        LOG.info("created router: %s" % router)
+        return router
+
+    def _add_router_interface(self, context, router_id, interface_info):
+        plugins = manager.NeutronManager.get_service_plugins()
+        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
+        if not l3_plugin:
+            raise Exception(_("No L3 router service plugin found."))
+        l3_plugin.add_router_interface(context._plugin_context, router_id,
+                                       interface_info)
+
+    def _get_firewall(self, context, fw_id):
+        plugins = manager.NeutronManager.get_service_plugins()
+        fw_plugin = plugins.get(pconst.FIREWALL)
+        if not fw_plugin:
+            raise Exception(_("No Firewall service plugin found."))
+        firewall = fw_plugin.get_firewall(context._plugin_context, fw_id)
+        return firewall
+
+    def _update_firewall(self, context, fw_id, attrs):
+        plugins = manager.NeutronManager.get_service_plugins()
+        fw_plugin = plugins.get(pconst.FIREWALL)
+        if not fw_plugin:
+            raise Exception(_("No Firewall service plugin found."))
+        firewall = fw_plugin.update_firewall(context._plugin_context, fw_id,
+                                             attrs)
+        return firewall
+
     def _validate_rd_routers(self, context):
         # TODO(rkukura): Implement
         pass
@@ -284,12 +341,7 @@ class MappingDriver(api.PolicyDriver):
                   'name': 'rd_' + context.current['name'],
                   'external_gateway_info': None,
                   'admin_state_up': True}}
-        plugins = manager.NeutronManager.get_service_plugins()
-        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
-        if not l3_plugin:
-            raise Exception(_("No L3 router service plugin found."))
-        router = l3_plugin.create_router(context._plugin_context, attrs)
-        LOG.info("created router: %s" % router)
+        router = self._create_router(context, attrs)
         context.add_neutron_router(router['id'])
 
     def _default_bd_rd(self, context):
@@ -323,8 +375,7 @@ class MappingDriver(api.PolicyDriver):
                   'name': 'bd_' + context.current['name'],
                   'admin_state_up': True,
                   'shared': False}}
-        core_plugin = manager.NeutronManager.get_plugin()
-        network = core_plugin.create_network(context._plugin_context, attrs)
+        network = self._create_network(context, attrs)
         context.set_neutron_network_id(network['id'])
 
     def _default_epg_bd(self, context):
@@ -360,29 +411,22 @@ class MappingDriver(api.PolicyDriver):
                   'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
                   'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                   'host_routes': attributes.ATTR_NOT_SPECIFIED}}
-        core_plugin = manager.NeutronManager.get_plugin()
-        plugins = manager.NeutronManager.get_service_plugins()
-        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
-        if not l3_plugin:
-            raise Exception(_("No L3 router service plugin found."))
         subnet = None
         for cidr in supernet.subnet(rd['subnet_prefix_length']):
             if context.is_cidr_available(cidr):
                 try:
                     attrs['subnet']['cidr'] = cidr.__str__()
-                    subnet = core_plugin.create_subnet(context._plugin_context,
-                                                       attrs)
+                    subnet = self._create_subnet(context, attrs)
                     try:
-                        router = rd['neutron_routers'][0]
+                        router_id = rd['neutron_routers'][0]
                         interface_info = {'subnet_id': subnet['id']}
-                        l3_plugin.add_router_interface(context._plugin_context,
-                                                       router, interface_info)
+                        self._add_router_interface(context, router_id,
+                                                   interface_info)
                         context.add_neutron_subnet(subnet['id'])
                         return
                     except Exception:
                         LOG.exception("add_neutron_subnet failed")
-                        core_plugin.delete_subnet(context._plugin_context,
-                                                  subnet['id'])
+                        self._delete_subnet(context, subnet['id'])
                 except Exception:
                     LOG.exception("create_subnet failed")
         # TODO(rkukura): Need real exception
@@ -408,19 +452,14 @@ class MappingDriver(api.PolicyDriver):
                   'device_id': '',
                   'device_owner': '',
                   'admin_state_up': True}}
-        core_plugin = manager.NeutronManager.get_plugin()
-        port = core_plugin.create_port(context._plugin_context, attrs)
+        port = self._create_port(context, attrs)
         context.set_neutron_port_id(port['id'])
 
     def _handle_redirect_action(self, context):
         # TODO(s3wong): assuming redirect to firewall only
         fw_id = context.current['action_value']
         LOG.info("fw_id is %s", fw_id)
-        plugins = manager.NeutronManager.get_service_plugins()
-        fw_plugin = plugins.get(pconst.FIREWALL)
-        if not fw_plugin:
-            raise Exception(_("No Firewall service plugin found."))
-        firewall = fw_plugin.get_firewall(context._plugin_context, fw_id)
+        firewall = self._get_firewall(context, fw_id)
         if not firewall:
             raise Exception(_("Firewall not found."))
 
@@ -433,4 +472,4 @@ class MappingDriver(api.PolicyDriver):
                   'description': firewall['description'],
                   'admin_state_up': True,
                   'firewall_policy_id': firewall['firewall_policy_id']}}
-        fw_plugin.update_firewall(context._plugin_context, fw_id, attrs)
+        self._update_firewall(context, fw_id, attrs)
