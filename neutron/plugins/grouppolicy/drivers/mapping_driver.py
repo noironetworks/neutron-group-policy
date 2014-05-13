@@ -14,7 +14,9 @@ import netaddr
 
 from oslo.config import cfg
 
+from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
+from neutron.common import constants as const
 from neutron.common import exceptions as nexc
 from neutron.common import log
 from neutron import manager
@@ -280,26 +282,83 @@ class MappingDriver(api.PolicyDriver):
         # plugins are loaded to grab and store plugin.
         return manager.NeutronManager.get_plugin()
 
+    # The following methods perform the necessary subset of
+    # functionality from neutron.api.v2.base.Controller.
+    #
+    # REVISIT(rkukura): Can we either just use the same Controller as
+    # WSGI, or else create and use our own Controller instance?
+
+    @property
+    def _dhcp_agent_notifier(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store notifier.
+        agent_notifiers = getattr(self._core_plugin, 'agent_notifiers', {})
+        return (agent_notifiers.get(const.AGENT_TYPE_DHCP) or
+                dhcp_rpc_agent_api.DhcpAgentNotifyAPI())
+
+    def _create_resource(self, plugin, context, resource, attrs):
+        # REVISIT(rkukura): Do create.start notification?
+        # REVISIT(rkukura): Check authorization?
+        # REVISIT(rkukura): Do quota?
+        obj_creator = getattr(plugin, 'create_' + resource)
+        obj = obj_creator(context, {resource: attrs})
+        LOG.info("created %s: %s" % (resource, obj))
+        # REVISIT(rkukura): Do nova notification?
+        # REVISIT(rkukura): Do create.end notification?
+        if cfg.CONF.dhcp_agent_notification:
+            self._dhcp_agent_notifier.notify(context,
+                                             {resource: obj},
+                                             resource + '.create.end')
+        return obj
+
+    def _update_resource(self, plugin, context, resource, id, attrs):
+        # REVISIT(rkukura): Do update.start notification?
+        # REVISIT(rkukura): Check authorization?
+        obj_updater = getattr(plugin, 'update_' + resource)
+        obj = obj_updater(context, id, {resource: attrs})
+        LOG.info("created %s: %s" % (resource, obj))
+        # REVISIT(rkukura): Do nova notification?
+        # REVISIT(rkukura): Do update.end notification?
+        if cfg.CONF.dhcp_agent_notification:
+            self._dhcp_agent_notifier.notify(context,
+                                             {resource: obj},
+                                             resource + '.update.end')
+        return obj
+
+    def _delete_resource(self, plugin, context, resource, id):
+        # REVISIT(rkukura): Do delete.start notification?
+        # REVISIT(rkukura): Check authorization?
+        obj_getter = getattr(plugin, 'get_' + resource)
+        obj = obj_getter(context, id)
+        obj_deleter = getattr(plugin, 'delete_' + resource)
+        obj_deleter(context, id)
+        LOG.info("created %s: %s" % (resource, id))
+        # REVISIT(rkukura): Do nova notification?
+        # REVISIT(rkukura): Do delete.end notification?
+        if cfg.CONF.dhcp_agent_notification:
+            self._dhcp_agent_notifier.notify(context,
+                                             {resource: obj},
+                                             resource + '.delete.end')
+
     def _create_network(self, context, attrs):
-        network = self._core_plugin.create_network(context._plugin_context,
-                                                   attrs)
-        LOG.info("created network: %s" % network)
-        return network
+        return self._create_resource(self._core_plugin,
+                                     context._plugin_context,
+                                     'network', attrs)
 
     def _create_subnet(self, context, attrs):
-        subnet = self._core_plugin.create_subnet(context._plugin_context,
-                                                 attrs)
-        LOG.info("created subnet: %s" % subnet)
-        return subnet
+        return self._create_resource(self._core_plugin,
+                                     context._plugin_context,
+                                     'subnet', attrs)
 
     def _delete_subnet(self, context, id):
-        self._core_plugin.delete_subnet(context._plugin_context, id)
-        LOG.info("deleted subnet: %s" % id)
+        self._delete_resource(self._core_plugin,
+                              context._plugin_context,
+                              'subnet', id)
 
     def _create_port(self, context, attrs):
-        port = self._core_plugin.create_port(context._plugin_context, attrs)
-        LOG.info("created port: %s" % port)
-        return port
+        return self._create_resource(self._core_plugin,
+                                     context._plugin_context,
+                                     'port', attrs)
 
     @property
     def _l3_plugin(self):
@@ -312,9 +371,9 @@ class MappingDriver(api.PolicyDriver):
         return l3_plugin
 
     def _create_router(self, context, attrs):
-        router = self._l3_plugin.create_router(context._plugin_context, attrs)
-        LOG.info("created router: %s" % router)
-        return router
+        return self._create_resource(self._l3_plugin,
+                                     context._plugin_context,
+                                     'router', attrs)
 
     def _add_router_interface(self, context, router_id, interface_info):
         self._l3_plugin.add_router_interface(context._plugin_context,
@@ -334,19 +393,19 @@ class MappingDriver(api.PolicyDriver):
         return self._fw_plugin.get_firewall(context._plugin_context, fw_id)
 
     def _update_firewall(self, context, fw_id, attrs):
-        return self._fw_plugin.update_firewall(context._plugin_context, fw_id,
-                                               attrs)
+        return self._update_resource(self._fw_plugin,
+                                     context._plugin_context,
+                                     'firewall', fw_id, attrs)
 
     def _validate_rd_routers(self, context):
         # TODO(rkukura): Implement
         pass
 
     def _add_rd_router(self, context):
-        attrs = {'router':
-                 {'tenant_id': context.current['tenant_id'],
-                  'name': 'rd_' + context.current['name'],
-                  'external_gateway_info': None,
-                  'admin_state_up': True}}
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'rd_' + context.current['name'],
+                 'external_gateway_info': None,
+                 'admin_state_up': True}
         router = self._create_router(context, attrs)
         context.add_neutron_router(router['id'])
 
@@ -376,11 +435,10 @@ class MappingDriver(api.PolicyDriver):
         pass
 
     def _create_bd_network(self, context):
-        attrs = {'network':
-                 {'tenant_id': context.current['tenant_id'],
-                  'name': 'bd_' + context.current['name'],
-                  'admin_state_up': True,
-                  'shared': False}}
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'bd_' + context.current['name'],
+                 'admin_state_up': True,
+                 'shared': False}
         network = self._create_network(context, attrs)
         context.set_neutron_network_id(network['id'])
 
@@ -407,21 +465,20 @@ class MappingDriver(api.PolicyDriver):
         rd = context._plugin.get_routing_domain(context._plugin_context,
                                                 rd_id)
         supernet = netaddr.IPNetwork(rd['ip_supernet'])
-        attrs = {'subnet':
-                 {'tenant_id': context.current['tenant_id'],
-                  'name': 'epg_' + context.current['name'],
-                  'network_id': bd['neutron_network_id'],
-                  'ip_version': rd['ip_version'],
-                  'enable_dhcp': True,
-                  'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                  'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
-                  'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
-                  'host_routes': attributes.ATTR_NOT_SPECIFIED}}
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'epg_' + context.current['name'],
+                 'network_id': bd['neutron_network_id'],
+                 'ip_version': rd['ip_version'],
+                 'enable_dhcp': True,
+                 'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
+                 'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                 'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
+                 'host_routes': attributes.ATTR_NOT_SPECIFIED}
         subnet = None
         for cidr in supernet.subnet(rd['subnet_prefix_length']):
             if context.is_cidr_available(cidr):
                 try:
-                    attrs['subnet']['cidr'] = cidr.__str__()
+                    attrs['cidr'] = cidr.__str__()
                     subnet = self._create_subnet(context, attrs)
                     try:
                         router_id = rd['neutron_routers'][0]
@@ -449,15 +506,14 @@ class MappingDriver(api.PolicyDriver):
         bd_id = epg['bridge_domain_id']
         bd = context._plugin.get_bridge_domain(context._plugin_context,
                                                bd_id)
-        attrs = {'port':
-                 {'tenant_id': context.current['tenant_id'],
-                  'name': 'ep_' + context.current['name'],
-                  'network_id': bd['neutron_network_id'],
-                  'mac_address': attributes.ATTR_NOT_SPECIFIED,
-                  'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
-                  'device_id': '',
-                  'device_owner': '',
-                  'admin_state_up': True}}
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'ep_' + context.current['name'],
+                 'network_id': bd['neutron_network_id'],
+                 'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                 'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
+                 'device_id': '',
+                 'device_owner': '',
+                 'admin_state_up': True}
         port = self._create_port(context, attrs)
         context.set_neutron_port_id(port['id'])
 
@@ -472,10 +528,9 @@ class MappingDriver(api.PolicyDriver):
         # TODO(s3wong): if firewall already enabled, action has no effect
         if firewall['admin_state_up'] == True:
             LOG.info("firewall %s admin state already up", fw_id)
-        attrs = {'firewall':
-                 {'tenant_id': firewall['tenant_id'],
-                  'name': firewall['name'],
-                  'description': firewall['description'],
-                  'admin_state_up': True,
-                  'firewall_policy_id': firewall['firewall_policy_id']}}
+        attrs = {'tenant_id': firewall['tenant_id'],
+                 'name': firewall['name'],
+                 'description': firewall['description'],
+                 'admin_state_up': True,
+                 'firewall_policy_id': firewall['firewall_policy_id']}
         self._update_firewall(context, fw_id, attrs)

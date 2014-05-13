@@ -11,6 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import mock
+
+from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.plugins.grouppolicy import config
 import neutron.tests.unit.db.grouppolicy.test_db_grouppolicy_mapping as tdb
 
@@ -21,7 +24,6 @@ GP_PLUGIN_KLASS = (
 
 
 class GroupPolicyMappingTestCase(tdb.GroupPolicyMappingDbTestCase):
-
     def setUp(self, core_plugin=None, gp_plugin=None, ext_mgr=None):
         config.cfg.CONF.set_override('policy_drivers',
                                      ['mapping'],
@@ -88,5 +90,25 @@ class TestGroupPolicyMapping(GroupPolicyMappingTestCase):
                         self.assertIsNotNone(port_id)
                         # TODO(rkukura): Verify port details
 
+
+class NotificationTest(GroupPolicyMappingTestCase):
+    def test_dhcp_notifier(self, **kwargs):
+        with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
+                               'notify') as dhcp_notifier:
+            with self.endpoint_group(name="epg1") as epg:
+                epg_id = epg['endpoint_group']['id']
+                with self.endpoint(name="ep1", endpoint_group_id=epg_id) as ep:
+                    self.assertEqual(ep['endpoint']['endpoint_group_id'],
+                                     epg_id)
+                    # REVISIT(rkukura): check dictionaries for correct
+                    # id, etc.
+                    dhcp_notifier.assert_any_call(mock.ANY, mock.ANY,
+                                                  "router.create.end")
+                    dhcp_notifier.assert_any_call(mock.ANY, mock.ANY,
+                                                  "network.create.end")
+                    dhcp_notifier.assert_any_call(mock.ANY, mock.ANY,
+                                                  "subnet.create.end")
+                    dhcp_notifier.assert_any_call(mock.ANY, mock.ANY,
+                                                  "port.create.end")
 
 # TODO(Sumit): XML tests
