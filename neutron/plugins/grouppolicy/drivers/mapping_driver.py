@@ -20,6 +20,7 @@ from neutron.common import constants as const
 from neutron.common import exceptions as nexc
 from neutron.common import log
 from neutron import manager
+from neutron.notifiers import nova
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
 from neutron.plugins.grouppolicy import group_policy_driver_api as api
@@ -55,6 +56,9 @@ class MappingDriver(api.PolicyDriver):
     @log.log
     def initialize(self):
         LOG.info("initialize")
+        self._cached_agent_notifier = None
+        self._nova_notifier = nova.Notifier()
+
         gpm = cfg.CONF.group_policy_mapping
         self._default_rd_name = gpm.default_routing_domain_name
         self._default_ip_version = gpm.default_ip_version
@@ -292,18 +296,22 @@ class MappingDriver(api.PolicyDriver):
     def _dhcp_agent_notifier(self):
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store notifier.
-        agent_notifiers = getattr(self._core_plugin, 'agent_notifiers', {})
-        return (agent_notifiers.get(const.AGENT_TYPE_DHCP) or
+        if not self._cached_agent_notifier:
+            agent_notifiers = getattr(self._core_plugin, 'agent_notifiers', {})
+            self._cached_agent_notifier = (
+                agent_notifiers.get(const.AGENT_TYPE_DHCP) or
                 dhcp_rpc_agent_api.DhcpAgentNotifyAPI())
+        return self._cached_agent_notifier
 
     def _create_resource(self, plugin, context, resource, attrs):
         # REVISIT(rkukura): Do create.start notification?
         # REVISIT(rkukura): Check authorization?
         # REVISIT(rkukura): Do quota?
-        obj_creator = getattr(plugin, 'create_' + resource)
+        action = 'create_' + resource
+        obj_creator = getattr(plugin, action)
         obj = obj_creator(context, {resource: attrs})
         LOG.info("created %s: %s" % (resource, obj))
-        # REVISIT(rkukura): Do nova notification?
+        self._nova_notifier.send_network_change(action, {}, {resource: obj})
         # REVISIT(rkukura): Do create.end notification?
         if cfg.CONF.dhcp_agent_notification:
             self._dhcp_agent_notifier.notify(context,
@@ -314,10 +322,14 @@ class MappingDriver(api.PolicyDriver):
     def _update_resource(self, plugin, context, resource, id, attrs):
         # REVISIT(rkukura): Do update.start notification?
         # REVISIT(rkukura): Check authorization?
-        obj_updater = getattr(plugin, 'update_' + resource)
+        obj_getter = getattr(plugin, 'get_' + resource)
+        orig_obj = obj_getter(context, id)
+        action = 'update_' + resource
+        obj_updater = getattr(plugin, action)
         obj = obj_updater(context, id, {resource: attrs})
         LOG.info("created %s: %s" % (resource, obj))
-        # REVISIT(rkukura): Do nova notification?
+        self._nova_notifier.send_network_change(action, orig_obj,
+                                                {resource: obj})
         # REVISIT(rkukura): Do update.end notification?
         if cfg.CONF.dhcp_agent_notification:
             self._dhcp_agent_notifier.notify(context,
@@ -330,10 +342,11 @@ class MappingDriver(api.PolicyDriver):
         # REVISIT(rkukura): Check authorization?
         obj_getter = getattr(plugin, 'get_' + resource)
         obj = obj_getter(context, id)
-        obj_deleter = getattr(plugin, 'delete_' + resource)
+        action = 'delete_' + resource
+        obj_deleter = getattr(plugin, action)
         obj_deleter(context, id)
         LOG.info("created %s: %s" % (resource, id))
-        # REVISIT(rkukura): Do nova notification?
+        self._nova_notifier.send_network_change(action, {}, {resource: obj})
         # REVISIT(rkukura): Do delete.end notification?
         if cfg.CONF.dhcp_agent_notification:
             self._dhcp_agent_notifier.notify(context,

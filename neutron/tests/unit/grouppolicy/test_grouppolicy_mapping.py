@@ -14,6 +14,7 @@
 import mock
 
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
+from neutron.notifiers import nova
 from neutron.plugins.grouppolicy import config
 import neutron.tests.unit.db.grouppolicy.test_db_grouppolicy_mapping as tdb
 
@@ -110,5 +111,24 @@ class NotificationTest(GroupPolicyMappingTestCase):
                                                   "subnet.create.end")
                     dhcp_notifier.assert_any_call(mock.ANY, mock.ANY,
                                                   "port.create.end")
+
+    def test_nova_notifier(self, **kwargs):
+        with mock.patch.object(nova.Notifier,
+                               'send_network_change') as nova_notifier:
+            with self.endpoint_group(name="epg1") as epg:
+                epg_id = epg['endpoint_group']['id']
+                with self.endpoint(name="ep1", endpoint_group_id=epg_id) as ep:
+                    self.assertEqual(ep['endpoint']['endpoint_group_id'],
+                                     epg_id)
+                    # REVISIT(rkukura): check dictionaries for correct
+                    # id, etc.
+                    nova_notifier.assert_any_call("create_router", {},
+                                                  mock.ANY)
+                    nova_notifier.assert_any_call("create_network", {},
+                                                  mock.ANY)
+                    nova_notifier.assert_any_call("create_subnet", {},
+                                                  mock.ANY)
+                    nova_notifier.assert_any_call("create_port", {},
+                                                  mock.ANY)
 
 # TODO(Sumit): XML tests
