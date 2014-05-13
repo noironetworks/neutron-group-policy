@@ -14,10 +14,13 @@ import netaddr
 
 from oslo.config import cfg
 
+from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.v2 import attributes
+from neutron.common import constants as const
 from neutron.common import exceptions as nexc
 from neutron.common import log
 from neutron import manager
+from neutron.notifiers import nova
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
 from neutron.plugins.grouppolicy import group_policy_driver_api as api
@@ -53,6 +56,9 @@ class MappingDriver(api.PolicyDriver):
     @log.log
     def initialize(self):
         LOG.info("initialize")
+        self._cached_agent_notifier = None
+        self._nova_notifier = nova.Notifier()
+
         gpm = cfg.CONF.group_policy_mapping
         self._default_rd_name = gpm.default_routing_domain_name
         self._default_ip_version = gpm.default_ip_version
@@ -274,22 +280,146 @@ class MappingDriver(api.PolicyDriver):
     def delete_routing_domain_postcommit(self, context):
         LOG.info("delete_routing_domain_postcommit: %s", context.current)
 
+    @property
+    def _core_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        return manager.NeutronManager.get_plugin()
+
+    # The following methods perform the necessary subset of
+    # functionality from neutron.api.v2.base.Controller.
+    #
+    # REVISIT(rkukura): Can we either just use the same Controller as
+    # WSGI, or else create and use our own Controller instance?
+
+    @property
+    def _dhcp_agent_notifier(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store notifier.
+        if not self._cached_agent_notifier:
+            agent_notifiers = getattr(self._core_plugin, 'agent_notifiers', {})
+            self._cached_agent_notifier = (
+                agent_notifiers.get(const.AGENT_TYPE_DHCP) or
+                dhcp_rpc_agent_api.DhcpAgentNotifyAPI())
+        return self._cached_agent_notifier
+
+    def _create_resource(self, plugin, context, resource, attrs):
+        # REVISIT(rkukura): Do create.start notification?
+        # REVISIT(rkukura): Check authorization?
+        # REVISIT(rkukura): Do quota?
+        action = 'create_' + resource
+        obj_creator = getattr(plugin, action)
+        obj = obj_creator(context, {resource: attrs})
+        LOG.info("created %s: %s" % (resource, obj))
+        self._nova_notifier.send_network_change(action, {}, {resource: obj})
+        # REVISIT(rkukura): Do create.end notification?
+        if cfg.CONF.dhcp_agent_notification:
+            self._dhcp_agent_notifier.notify(context,
+                                             {resource: obj},
+                                             resource + '.create.end')
+        return obj
+
+    def _update_resource(self, plugin, context, resource, id, attrs):
+        # REVISIT(rkukura): Do update.start notification?
+        # REVISIT(rkukura): Check authorization?
+        obj_getter = getattr(plugin, 'get_' + resource)
+        orig_obj = obj_getter(context, id)
+        action = 'update_' + resource
+        obj_updater = getattr(plugin, action)
+        obj = obj_updater(context, id, {resource: attrs})
+        LOG.info("created %s: %s" % (resource, obj))
+        self._nova_notifier.send_network_change(action, orig_obj,
+                                                {resource: obj})
+        # REVISIT(rkukura): Do update.end notification?
+        if cfg.CONF.dhcp_agent_notification:
+            self._dhcp_agent_notifier.notify(context,
+                                             {resource: obj},
+                                             resource + '.update.end')
+        return obj
+
+    def _delete_resource(self, plugin, context, resource, id):
+        # REVISIT(rkukura): Do delete.start notification?
+        # REVISIT(rkukura): Check authorization?
+        obj_getter = getattr(plugin, 'get_' + resource)
+        obj = obj_getter(context, id)
+        action = 'delete_' + resource
+        obj_deleter = getattr(plugin, action)
+        obj_deleter(context, id)
+        LOG.info("created %s: %s" % (resource, id))
+        self._nova_notifier.send_network_change(action, {}, {resource: obj})
+        # REVISIT(rkukura): Do delete.end notification?
+        if cfg.CONF.dhcp_agent_notification:
+            self._dhcp_agent_notifier.notify(context,
+                                             {resource: obj},
+                                             resource + '.delete.end')
+
+    def _create_network(self, context, attrs):
+        return self._create_resource(self._core_plugin,
+                                     context._plugin_context,
+                                     'network', attrs)
+
+    def _create_subnet(self, context, attrs):
+        return self._create_resource(self._core_plugin,
+                                     context._plugin_context,
+                                     'subnet', attrs)
+
+    def _delete_subnet(self, context, id):
+        self._delete_resource(self._core_plugin,
+                              context._plugin_context,
+                              'subnet', id)
+
+    def _create_port(self, context, attrs):
+        return self._create_resource(self._core_plugin,
+                                     context._plugin_context,
+                                     'port', attrs)
+
+    @property
+    def _l3_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        plugins = manager.NeutronManager.get_service_plugins()
+        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
+        if not l3_plugin:
+            raise Exception(_("No L3 router service plugin found."))
+        return l3_plugin
+
+    def _create_router(self, context, attrs):
+        return self._create_resource(self._l3_plugin,
+                                     context._plugin_context,
+                                     'router', attrs)
+
+    def _add_router_interface(self, context, router_id, interface_info):
+        self._l3_plugin.add_router_interface(context._plugin_context,
+                                             router_id, interface_info)
+
+    @property
+    def _fw_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        plugins = manager.NeutronManager.get_service_plugins()
+        fw_plugin = plugins.get(pconst.FIREWALL)
+        if not fw_plugin:
+            raise Exception(_("No Firewall service plugin found."))
+        return fw_plugin
+
+    def _get_firewall(self, context, fw_id):
+        return self._fw_plugin.get_firewall(context._plugin_context, fw_id)
+
+    def _update_firewall(self, context, fw_id, attrs):
+        return self._update_resource(self._fw_plugin,
+                                     context._plugin_context,
+                                     'firewall', fw_id, attrs)
+
     def _validate_rd_routers(self, context):
         # TODO(rkukura): Implement
         pass
 
     def _add_rd_router(self, context):
-        attrs = {'router':
-                 {'tenant_id': context.current['tenant_id'],
-                  'name': 'rd_' + context.current['name'],
-                  'external_gateway_info': None,
-                  'admin_state_up': True}}
-        plugins = manager.NeutronManager.get_service_plugins()
-        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
-        if not l3_plugin:
-            raise Exception(_("No L3 router service plugin found."))
-        router = l3_plugin.create_router(context._plugin_context, attrs)
-        LOG.info("created router: %s" % router)
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'rd_' + context.current['name'],
+                 'external_gateway_info': None,
+                 'admin_state_up': True}
+        router = self._create_router(context, attrs)
         context.add_neutron_router(router['id'])
 
     def _default_bd_rd(self, context):
@@ -318,13 +448,11 @@ class MappingDriver(api.PolicyDriver):
         pass
 
     def _create_bd_network(self, context):
-        attrs = {'network':
-                 {'tenant_id': context.current['tenant_id'],
-                  'name': 'bd_' + context.current['name'],
-                  'admin_state_up': True,
-                  'shared': False}}
-        core_plugin = manager.NeutronManager.get_plugin()
-        network = core_plugin.create_network(context._plugin_context, attrs)
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'bd_' + context.current['name'],
+                 'admin_state_up': True,
+                 'shared': False}
+        network = self._create_network(context, attrs)
         context.set_neutron_network_id(network['id'])
 
     def _default_epg_bd(self, context):
@@ -350,39 +478,31 @@ class MappingDriver(api.PolicyDriver):
         rd = context._plugin.get_routing_domain(context._plugin_context,
                                                 rd_id)
         supernet = netaddr.IPNetwork(rd['ip_supernet'])
-        attrs = {'subnet':
-                 {'tenant_id': context.current['tenant_id'],
-                  'name': 'epg_' + context.current['name'],
-                  'network_id': bd['neutron_network_id'],
-                  'ip_version': rd['ip_version'],
-                  'enable_dhcp': True,
-                  'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
-                  'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
-                  'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
-                  'host_routes': attributes.ATTR_NOT_SPECIFIED}}
-        core_plugin = manager.NeutronManager.get_plugin()
-        plugins = manager.NeutronManager.get_service_plugins()
-        l3_plugin = plugins.get(pconst.L3_ROUTER_NAT)
-        if not l3_plugin:
-            raise Exception(_("No L3 router service plugin found."))
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'epg_' + context.current['name'],
+                 'network_id': bd['neutron_network_id'],
+                 'ip_version': rd['ip_version'],
+                 'enable_dhcp': True,
+                 'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
+                 'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                 'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
+                 'host_routes': attributes.ATTR_NOT_SPECIFIED}
         subnet = None
         for cidr in supernet.subnet(rd['subnet_prefix_length']):
             if context.is_cidr_available(cidr):
                 try:
-                    attrs['subnet']['cidr'] = cidr.__str__()
-                    subnet = core_plugin.create_subnet(context._plugin_context,
-                                                       attrs)
+                    attrs['cidr'] = cidr.__str__()
+                    subnet = self._create_subnet(context, attrs)
                     try:
-                        router = rd['neutron_routers'][0]
+                        router_id = rd['neutron_routers'][0]
                         interface_info = {'subnet_id': subnet['id']}
-                        l3_plugin.add_router_interface(context._plugin_context,
-                                                       router, interface_info)
+                        self._add_router_interface(context, router_id,
+                                                   interface_info)
                         context.add_neutron_subnet(subnet['id'])
                         return
                     except Exception:
                         LOG.exception("add_neutron_subnet failed")
-                        core_plugin.delete_subnet(context._plugin_context,
-                                                  subnet['id'])
+                        self._delete_subnet(context, subnet['id'])
                 except Exception:
                     LOG.exception("create_subnet failed")
         # TODO(rkukura): Need real exception
@@ -399,38 +519,31 @@ class MappingDriver(api.PolicyDriver):
         bd_id = epg['bridge_domain_id']
         bd = context._plugin.get_bridge_domain(context._plugin_context,
                                                bd_id)
-        attrs = {'port':
-                 {'tenant_id': context.current['tenant_id'],
-                  'name': 'ep_' + context.current['name'],
-                  'network_id': bd['neutron_network_id'],
-                  'mac_address': attributes.ATTR_NOT_SPECIFIED,
-                  'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
-                  'device_id': '',
-                  'device_owner': '',
-                  'admin_state_up': True}}
-        core_plugin = manager.NeutronManager.get_plugin()
-        port = core_plugin.create_port(context._plugin_context, attrs)
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'ep_' + context.current['name'],
+                 'network_id': bd['neutron_network_id'],
+                 'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                 'fixed_ips': attributes.ATTR_NOT_SPECIFIED,
+                 'device_id': '',
+                 'device_owner': '',
+                 'admin_state_up': True}
+        port = self._create_port(context, attrs)
         context.set_neutron_port_id(port['id'])
 
     def _handle_redirect_action(self, context):
         # TODO(s3wong): assuming redirect to firewall only
         fw_id = context.current['action_value']
         LOG.info("fw_id is %s", fw_id)
-        plugins = manager.NeutronManager.get_service_plugins()
-        fw_plugin = plugins.get(pconst.FIREWALL)
-        if not fw_plugin:
-            raise Exception(_("No Firewall service plugin found."))
-        firewall = fw_plugin.get_firewall(context._plugin_context, fw_id)
+        firewall = self._get_firewall(context, fw_id)
         if not firewall:
             raise Exception(_("Firewall not found."))
 
         # TODO(s3wong): if firewall already enabled, action has no effect
         if firewall['admin_state_up'] == True:
             LOG.info("firewall %s admin state already up", fw_id)
-        attrs = {'firewall':
-                 {'tenant_id': firewall['tenant_id'],
-                  'name': firewall['name'],
-                  'description': firewall['description'],
-                  'admin_state_up': True,
-                  'firewall_policy_id': firewall['firewall_policy_id']}}
-        fw_plugin.update_firewall(context._plugin_context, fw_id, attrs)
+        attrs = {'tenant_id': firewall['tenant_id'],
+                 'name': firewall['name'],
+                 'description': firewall['description'],
+                 'admin_state_up': True,
+                 'firewall_policy_id': firewall['firewall_policy_id']}
+        self._update_firewall(context, fw_id, attrs)
