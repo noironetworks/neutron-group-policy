@@ -12,6 +12,7 @@
 # limitations under the License.
 
 import neutron.tests.unit.db.grouppolicy.test_db_grouppolicy as tdb
+import neutron.tests.unit.db.grouppolicy.test_db_grouppolicy_mapping as tdbm
 
 
 GP_PLUGIN_KLASS = (
@@ -31,3 +32,20 @@ class TestGroupPolicyPluginUnMappedResources(
     GroupPolicyPluginTestCase, tdb.TestGroupPolicyUnMappedResources):
 
     pass
+
+
+class GroupPolicyPluginMappingTestCase(tdbm.GroupPolicyMappingDbTestCase):
+
+    def setUp(self, core_plugin=None, gp_plugin=None, ext_mgr=None):
+        super(GroupPolicyPluginMappingTestCase, self).setUp(
+            gp_plugin=GP_PLUGIN_KLASS
+        )
+
+
+class TestGroupPolicyPluginMappedResources(
+    GroupPolicyPluginMappingTestCase, tdbm.TestGroupPolicyMappedResources):
+
+    pass
+
+
+# TODO(Sumit): XML tests

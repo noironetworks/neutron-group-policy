@@ -12,7 +12,7 @@
 
 from neutron.common import log
 from neutron.db import api as qdbapi
-from neutron.db.grouppolicy import db_group_policy
+from neutron.db.grouppolicy import db_group_policy_mapping
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.grouppolicy.common import exceptions as gp_exc
@@ -24,7 +24,7 @@ from neutron.plugins.grouppolicy import policy_driver_manager as manager
 LOG = logging.getLogger(__name__)
 
 
-class GroupPolicyPlugin(db_group_policy.GroupPolicyDbMixin):
+class GroupPolicyPlugin(db_group_policy_mapping.GroupPolicyMappingDbMixin):
 
     """Implementation of the Group Policy Model Plugin.
 
@@ -32,7 +32,7 @@ class GroupPolicyPlugin(db_group_policy.GroupPolicyDbMixin):
     Most DB related works are implemented in class
     db_group_policy_mapping.GroupPolicyMappingDbMixin.
     """
-    supported_extension_aliases = ["group-policy"]
+    supported_extension_aliases = ["group-policy", "group-policy-mapping"]
 
     def __init__(self):
         qdbapi.register_models()
