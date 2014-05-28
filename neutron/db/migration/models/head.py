@@ -29,6 +29,7 @@ from neutron.db import external_net_db  # noqa
 from neutron.db import extradhcpopt_db  # noqa
 from neutron.db import extraroute_db  # noqa
 from neutron.db.firewall import firewall_db  # noqa
+from neutron.db.grouppolicy import group_policy_db  # noqa
 from neutron.db import l3_agentschedulers_db  # noqa
 from neutron.db import l3_attrs_db  # noqa
 from neutron.db import l3_db  # noqa
