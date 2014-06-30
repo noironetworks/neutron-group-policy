@@ -19,9 +19,9 @@ from neutron.db import common_db_mixin
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.extensions import group_policy as gpolicy
-from neutron.plugins.common import constants
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
+from neutron.plugins.common import constants
 from neutron.services.grouppolicy.common import constants as gp_constants
 
 
@@ -735,3 +735,23 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_policy_rules_count(self, context, filters=None):
         return self._get_collection_count(context, PolicyRule,
                                           filters=filters)
+
+    @log.log
+    def create_contract(self, context, contract):
+        pass
+
+    @log.log
+    def update_contract(self, context, contract_id, contract):
+        pass
+
+    @log.log
+    def get_contracts(self, context, filters=None, fields=None):
+        pass
+
+    @log.log
+    def get_contract(self, context, contract_id, fields=None):
+        pass
+
+    @log.log
+    def delete_contract(self, context, contract_id):
+        pass
