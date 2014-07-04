@@ -83,3 +83,13 @@ TYPE_NONE = 'none'
 
 # The maximum length of an interface name (in Linux)
 MAX_DEV_NAME_LEN = 16
+
+# Service Attachment Point Type
+SERVICE_AP_NEUTRON_PORT = 'neutron_port'
+SERVICE_AP_ROUTER = 'neutron_router'
+SERVICE_AP_EXTERNAL_AP = 'external_ap'
+
+# Service insertion mode
+SERVICE_AP_INSERT_MODE_L3 = 'L3'
+SERVICE_AP_INSERT_MODE_L2 = 'L2'
+SERVICE_AP_INSERT_MODE_L1 = 'L1'

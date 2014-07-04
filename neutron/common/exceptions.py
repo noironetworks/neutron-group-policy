@@ -96,6 +96,10 @@ class PolicyFileNotFound(NotFound):
     message = _("Policy configuration policy.json could not be found")
 
 
+class ServiceAttachmentPointNotFound(NotFound):
+    message = _("Service attachment point %(service_ap_id) could not be found")
+
+
 class PolicyInitError(NeutronException):
     message = _("Failed to init policy %(policy)s because %(reason)s")
 
