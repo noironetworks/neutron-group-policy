@@ -81,6 +81,7 @@ from neutron.plugins.vmware.dbexts import networkgw_db  # noqa
 from neutron.plugins.vmware.dbexts import qos_db  # noqa
 from neutron.plugins.vmware.dbexts import vcns_models  # noqa
 from neutron.services.grouppolicy.drivers import implicit_policy  # noqa
+from neutron.services.grouppolicy.drivers import resource_mapping  # noqa
 from neutron.services.loadbalancer import agent_scheduler  # noqa
 from neutron.services.loadbalancer.drivers.embrane import (  # noqa
     models as embrane_models)
