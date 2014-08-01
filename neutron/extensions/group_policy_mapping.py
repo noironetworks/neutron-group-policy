@@ -38,6 +38,15 @@ EXTENDED_ATTRIBUTES_2_0 = {
                     'convert_to': attr.convert_none_to_empty_list,
                     'is_visible': True, 'default': None},
     },
+
+    gp.CONTRACTS: {
+        'consumed_sg_id': {'allow_post': True, 'allow_put': False,
+        'validate': {'type:uuid_or_none': None},
+        'is_visible': True, 'default': None},
+        'provided_sg_id': {'allow_post': True, 'allow_put': False,
+        'validate': {'type:uuid_or_none': None},
+        'is_visible': True, 'default': None},
+    },
 }
 
 

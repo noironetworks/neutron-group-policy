@@ -24,6 +24,7 @@ from neutron import manager
 from neutron.notifiers import nova
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
+from neutron.services.grouppolicy.common import constants as gconst
 from neutron.services.grouppolicy.common import exceptions as exc
 from neutron.services.grouppolicy import group_policy_driver_api as api
 
@@ -66,6 +67,15 @@ class OwnedRouter(model_base.BASEV2):
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           nullable=False, primary_key=True)
 
+class OwnedSecurityGroups(model_base.BASEV2):
+    """Security Groups owned by the resource_mapping driver."""
+
+    __tablename__ = 'gpm_owned_security_groups'
+    consumed_sg_id = sa.Column(sa.String(36),
+                               sa.ForeignKey('security_groups.id',
+                                             ondelete='CASCADE'),
+                               nullable=False, primary_key=True)
+
 
 class ResourceMappingDriver(api.PolicyDriver):
     """Resource Mapping driver for Group Policy plugin.
@@ -90,6 +100,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         # EPG.
         if not context.current['port_id']:
             self._use_implicit_port(context)
+        # TODO(s3wong): bind port to contract-default-security-group
 
     @log.log
     def update_endpoint_precommit(self, context):
@@ -97,6 +108,8 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_endpoint_postcommit(self, context):
+        # TODO(s3wong): if port mapping change, disassociate port
+        # from contract-default-sg, and bind updated port to it
         pass
 
     @log.log
@@ -105,6 +118,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def delete_endpoint_postcommit(self, context):
+        # TODO(s3wong): disassociate contract-default-sg from port
         port_id = context.current['port_id']
         self._cleanup_port(context, port_id)
 
@@ -129,6 +143,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                 self._use_explicit_subnet(context, subnet_id, router_id)
         else:
             self._use_implicit_subnet(context)
+        self._handle_contracts(context)
 
     @log.log
     def update_endpoint_group_precommit(self, context):
@@ -137,7 +152,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def update_endpoint_group_postcommit(self, context):
-        pass
+        self._handle_contracts(context)
 
     @log.log
     def delete_endpoint_group_precommit(self, context):
@@ -145,6 +160,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     @log.log
     def delete_endpoint_group_postcommit(self, context):
+        # TODO(s3wong): clean up port => security-groups binding
         l2p_id = context.current['l2_policy_id']
         l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
         l3p_id = l2p['l3_policy_id']
@@ -206,6 +222,15 @@ class ResourceMappingDriver(api.PolicyDriver):
     def delete_l3_policy_postcommit(self, context):
         for router_id in context.current['routers']:
             self._cleanup_router(context, router_id)
+
+    @log.log
+    def create_contract_postcommit(self, context):
+        # creating SGs
+        if not context.current['consumed_sg_id']:
+            consumed_sg = self._create_contract_sg(context, 'consumed')
+        if not context.current['provided_sg_id']:
+            provided_sg = self._create_contract_sg(context, 'provided')
+        context.set_contract_sg_ids(consumed_sg, provided_sg)
 
     def _use_implicit_port(self, context):
         epg_id = context.current['endpoint_group_id']
@@ -309,6 +334,34 @@ class ResourceMappingDriver(api.PolicyDriver):
         if self._router_is_owned(context._plugin_context.session, router_id):
             self._delete_router(context, router_id)
 
+    def _create_contract_sg(self, context, sg_name_prefix):
+        # This method sets up the attributes of security group
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': sg_name_prefix + '_' + context.current['name'],
+                 'description': '',
+                 'security_group_rules': ''}
+        return self._create_sg(context, attrs)
+
+    def _handle_contracts(self, context):
+        # This method handles contract => SG mapping
+        # context is EPG context
+
+        # for all consumed contracts, simply associate
+        # each EP's port from the EPG
+        # rules are expected to be filled out already
+        consumed_contracts = context.current['consumed_contracts']
+        provided_contracts = context.current['provided_contracts']
+        list_of_ep = context.current['endpoints']
+        subnets = context.current['subnets']
+        for ct_id in consumed_contracts:
+            self._assoc_sg_to_epg(context, list_of_ep, subnets,
+                                  ct_id, 'consumed')
+
+        for ct_id in provided_contracts:
+            self._assoc_sg_to_epg(context, list_of_ep, subnets,
+                                  ct_id, 'provided')
+
+
     # The following methods perform the necessary subset of
     # functionality from neutron.api.v2.base.Controller.
     #
@@ -363,6 +416,37 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._delete_resource(self._l3_plugin,
                               context._plugin_context,
                               'router', router_id)
+
+    def _create_sg(self, context, attrs):
+        return self._create_resource(self._core_plugin,
+                                     context._plugin_context,
+                                     'security_group', attrs)
+
+    def _update_sg(self, context, sg_id, attrs):
+        return self._update_resouce(self._core_plugin,
+                                    context._plugin_context,
+                                    'security_group', sg_id, attrs)
+
+    def _delete_sg(self, context, sg_id):
+        self._delete_resource(self._core_plugin,
+                              context._plugin_context,
+                              'security_group', sg_id)
+
+    def _create_sg_rule(self, context, attrs):
+        return self._create_resource(self._core_plugin,
+                                     context._plugin_context,
+                                     'security_group_rule', attrs)
+
+    def _update_sg_rule(self, context, sg_rule_id, attrs):
+        return self._update_resource(self._core_plugin,
+                                     context._plugin_context,
+                                     'security_group_rule', sg_rule_id,
+                                     attrs)
+
+    def _delete_sg_rule(self, context, sg_rule_id):
+        self._delete_resource(self._core_plugin,
+                              context._plugin_context,
+                              'security_group_rule', sg_rule_id)
 
     def _create_resource(self, plugin, context, resource, attrs):
         # REVISIT(rkukura): Do create.start notification?
@@ -482,3 +566,83 @@ class ResourceMappingDriver(api.PolicyDriver):
             return (session.query(OwnedRouter).
                     filter_by(router_id=router_id).
                     first() is not None)
+
+    def _set_sg_rule(self, context, sg_id, protocol, ip_prefix)
+        attrs = {'tenant_id': context.current['tenant_id'],
+                 'name': 'gp_mapped_rule_' + context.current['name'],
+                 'security_group_id': sg_id,
+                 'direction': 'egress',
+                 'protocol': protocol,
+                 'remote_ip_prefix': ip_prefix}
+        sg_rule = self._create_sg_rule(context, attrs)
+
+    def _assoc_sg_to_port(self, context, port_id, sg_id)
+        # TODO(s3wong): this probably doesn't work, security group isn't
+        # an attribute of port, you have another security-group port binding
+        # to look up per port security. This update probably requires
+        # security group db
+        port = context._plugin.get_port(context._plugin_context, port_id)
+        port_dict = context._plugin._make_port_dict(port)
+        sg_list = port_dict['security_groups']
+        sg_list.append(sg_id)
+        # after that we should call _create_port_security_group_binding,
+        # which requires this to be child of security_group_db
+        # self._process_port_create_security_group(context, port, sg_list)
+
+    def _assoc_sg_to_epg(self, context, ep_list, subnets,
+                         contract_id, direction)
+        # TODO(s3wong): some inefficiency here, particulary for update
+        # as we don't check if a port is already associated with a
+        # security group
+        contract = context._plugin.get_contract(context._plugin_context,
+                                                contract_id)
+        if direction == 'provided':
+            assoc_sg_id = contract['provided_sg_id']
+            consumed_sg_id = contract['consumed_sg_id']
+            for subnet_id in subnets:
+                subnet = context._plugin.get_subnet(context._plugin_context,
+                                                    subnet_id)
+                cidr = subnet['cidr']
+                cidr_list.append(cidr)
+        else:
+            assoc_sg_id = contract['consumed_sg_id']
+        policy_rules = contract['policy_rules']
+        for policy_rule_id in policy_rules:
+            policy_rule = context,_plugin.get_policy_rule(
+                                            context._plugin_context,
+                                            policy_rule_id)
+            classifier_id = policy_rule['policy_classifier_id']
+            classifier = context._plugin.get_policy_classifier(
+                                                context._plugin_context,
+                                                classifier_id)
+            classifier_dir = classifier['direction']
+            protocol = classifier['protocol']
+
+            if direction == 'provided':
+                # if contract is provided by EPG, we do the following:
+                # If classifier direction is OUT or BI, set the rules
+                # in provided_sg, then associate it to the port
+                # if the classifier direction is IN or BI, the EPG's
+                # group of subnets need to be set up on rules for
+                # the consumed_sg
+                if classifier_dir == gconst.GP_DIRECTION_BI:
+                    self._set_sg_rule(context, assoc_sg_id,
+                                      protocol, '0.0.0.0/0')
+                    for cidr in cidr_list:
+                        self._set_sg_rule(context, consumed_sg_id,
+                                          protocol, cidr)
+                elif classifier_dir == gconst.GP_DIRECTION_IN:
+                    for cidr in cidr_list:
+                        self._set_sg_rule(context, consumed_sg_id,
+                                          protocol, cidr)
+                else:
+                    self._set_sg_rule(context, assoc_sg_id, policy_rule)
+            # if it is a consumed contract, the rules should all be
+            # set up when we render this contract as part of a provided
+            # contract for some EPG(s), so no need to add rules
+
+        #assoc_sg = context._plugin.get_security_group(context._plugin_context,
+        #                                             assoc_sg_id)
+        for ep in ep_list:
+            port_id = ep['port_id']
+            self._assoc_sg_to_port(context, port_id, assoc_sg_id)

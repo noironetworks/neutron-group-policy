@@ -201,6 +201,11 @@ class PolicyAction(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 class Contract(model_base.BASEV2, models_v2.HasTenant):
     """Represents a Contract that is a collection of Policy rules."""
     __tablename__ = 'gp_contracts'
+    __mapper_args__ = {
+        'polymorphic_on': type,
+        'polymorphic_identity': 'base'
+    }
+    type = sa.Column(sa.String(15))
     id = sa.Column(sa.String(36), primary_key=True,
                    default=uuidutils.generate_uuid)
     name = sa.Column(sa.String(50))

@@ -74,6 +74,15 @@ class L3PolicyMapping(gpdb.L3Policy):
     routers = orm.relationship(L3PolicyRouterAssociation,
                                cascade='all', lazy="joined")
 
+class ContractMapping(gpdb.Contract):
+    """Mapping of Contract to two Security Groups."""
+    __table_args__ = {'extend_existing': True}
+    __mapper_args__ = {'polymorphic_identity': 'mapping'}
+    consumed_sg_id = sa.Column(sa.String(36),
+                     sa.ForeignKey('securitygroups.id'), primary_key=True)
+    provided_sg_id = sa.Column(sa.String(36),
+                     sa.ForeignKey('securitygroups.id'), primary_key=True)
+
 
 class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     """Group Policy Mapping interface implementation using SQLAlchemy models.
@@ -106,6 +115,13 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         res = super(GroupPolicyMappingDbPlugin,
                     self)._make_l3_policy_dict(l3p)
         res['routers'] = [router.router_id for router in l3p.routers]
+        return self._fields(res, fields)
+
+    def _make_contract_dict(self, contract, fields=None):
+        res = super(GroupPolicyMappingDbPlugin,
+                    self)._make_contract_dict(contract)
+        res['consumed_sg_id'] = contract.consumed_sg_id;
+        res['provided_sg_id'] = contract.provided_sg_id;
         return self._fields(res, fields)
 
     def _set_port_for_endpoint(self, context, ep_id, port_id):
@@ -262,3 +278,17 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                 del l3p['routers']
             l3p_db.update(l3p)
         return self._make_l3_policy_dict(l3p_db)
+
+    @log.log
+    def create_contract(self, context, contract):
+        ct = contract['contract']
+        tenant_id = self._get_tenant_id_for_create(context, ct)
+        with context.session.begin(subtransactions=True):
+            ct_db = ContractMapping(id=uuidutils.generate_uuid(),
+                                tenant_id=tenant_id,
+                                name=ct['name'],
+                                description=ct['description'],
+                                consumed_sg_id=ct['consumed_sg_id'],
+                                provided_sg_id=ct['provided_sg_id'])
+                                context.session.add(ct_db)
+        return self._make_endpoint_dict(ct_db)
