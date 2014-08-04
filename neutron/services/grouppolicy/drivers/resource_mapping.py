@@ -67,6 +67,19 @@ class OwnedRouter(model_base.BASEV2):
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           nullable=False, primary_key=True)
 
+class ContractSGsMapping(model_base.BASEV2):
+    """Contract to SGs mapping DB."""
+
+    __tablename__ = 'gpm_contract_sg_mapping'
+    contract_id = sa.Column(sa.String(36),
+                            sa.ForeignKey('gp_contracts.id',
+                                          ondelete='CASCADE'),
+                            nullable=False, primary_key=True)
+    provided_sg_id = sa.Column(sa.String(36),
+                               sa.ForeignKey('security_groups.id'))
+    consumed_sg_id = sa.Column(sa.String(36),
+                               sa.ForeignKey('security_groups.id'))
+
 
 class ResourceMappingDriver(api.PolicyDriver):
     """Resource Mapping driver for Group Policy plugin.
@@ -217,11 +230,10 @@ class ResourceMappingDriver(api.PolicyDriver):
     @log.log
     def create_contract_postcommit(self, context):
         # creating SGs
-        if not context.current['consumed_sg_id']:
-            consumed_sg = self._create_contract_sg(context, 'consumed')
-        if not context.current['provided_sg_id']:
-            provided_sg = self._create_contract_sg(context, 'provided')
-        context.set_contract_sg_ids(consumed_sg, provided_sg)
+        consumed_sg = self._create_contract_sg(context, 'consumed')
+        provided_sg = self._create_contract_sg(context, 'provided')
+        self._set_contract_sg_mapping(context._plugin_context.session,
+                                      consumed_sg, provided_sg)
 
     def _use_implicit_port(self, context):
         epg_id = context.current['endpoint_group_id']
@@ -557,6 +569,19 @@ class ResourceMappingDriver(api.PolicyDriver):
             return (session.query(OwnedRouter).
                     filter_by(router_id=router_id).
                     first() is not None)
+
+    def _set_contract_sg_mapping(self, session, contract_id,
+                                 consumed_sg_id, provided_sg_id):
+        with session.begin(subtransactions=True):
+            mapping = ContractSGsMapping(contract_id=contract_id,
+                                         consumed_sg_id=consumed_sg_id,
+                                         provided_sg_id=provided_sg_id)
+            session.add(mapping)
+
+    def _get_contract_sg_mapping(self, session, contract_id):
+        with session.begin(subtransactions=True):
+            return (session.query(ContractSGsMapping).
+                    filter_by(contract_id=contract_id).one())
 
     def _set_sg_rule(self, context, sg_id, protocol, ip_prefix)
         attrs = {'tenant_id': context.current['tenant_id'],
