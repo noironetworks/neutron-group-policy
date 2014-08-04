@@ -67,15 +67,6 @@ class OwnedRouter(model_base.BASEV2):
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           nullable=False, primary_key=True)
 
-class OwnedSecurityGroups(model_base.BASEV2):
-    """Security Groups owned by the resource_mapping driver."""
-
-    __tablename__ = 'gpm_owned_security_groups'
-    consumed_sg_id = sa.Column(sa.String(36),
-                               sa.ForeignKey('security_groups.id',
-                                             ondelete='CASCADE'),
-                               nullable=False, primary_key=True)
-
 
 class ResourceMappingDriver(api.PolicyDriver):
     """Resource Mapping driver for Group Policy plugin.

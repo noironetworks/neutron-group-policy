@@ -292,3 +292,10 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                 provided_sg_id=ct['provided_sg_id'])
                                 context.session.add(ct_db)
         return self._make_endpoint_dict(ct_db)
+
+    def _set_sgs_for_contract(self, context, contract_id,
+                              consumed_sg_id, provided_sg_id):
+        with context.session.begin(subtransactions=True):
+            ct_db = self._get_contract(context, ct_id)
+            ct_db.consumed_sg_id = consumed_sg_id
+            ct_db.provided_sg_id = provided_sg_id

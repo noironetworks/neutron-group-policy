@@ -184,3 +184,10 @@ class ContractContext(GroupPolicyContext, api.ContractContext):
     @property
     def original(self):
         return self._original_contract
+
+    def set_contract_sg_ids(self, consumed_sg_id, provided_sg_id):
+        self._plugin._set_sgs_for_contract(
+            self._plugin_context, self._contract['id'],
+            consumed_sg_id, provided_sg_id)
+        self._contract['consumed_sg_id'] = consumed_sg_id
+        self._contract['provided_sg_id'] = provided_sg_id
