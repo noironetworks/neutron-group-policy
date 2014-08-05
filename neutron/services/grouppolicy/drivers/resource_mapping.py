@@ -230,10 +230,14 @@ class ResourceMappingDriver(api.PolicyDriver):
     @log.log
     def create_contract_postcommit(self, context):
         # creating SGs
+        contract_id = context.current['id']
         consumed_sg = self._create_contract_sg(context, 'consumed')
         provided_sg = self._create_contract_sg(context, 'provided')
+        consumed_sg_id = consumed_sg['id']
+        provided_sg_id = provided_sg['id']
         self._set_contract_sg_mapping(context._plugin_context.session,
-                                      consumed_sg, provided_sg)
+                                      contract_id, consumed_sg_id,
+                                      provided_sg_id)
 
     def _use_implicit_port(self, context):
         epg_id = context.current['endpoint_group_id']
@@ -601,6 +605,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         port_dict = context._plugin._make_port_dict(port)
         sg_list = port_dict['security_groups']
         sg_list.append(sg_id)
+        port_dict['security_groups'] = sg_list;
+        self._update_port(context, port_id)
         # after that we should call _create_port_security_group_binding,
         # which requires this to be child of security_group_db
         # self._process_port_create_security_group(context, port, sg_list)
@@ -612,16 +618,20 @@ class ResourceMappingDriver(api.PolicyDriver):
         # security group
         contract = context._plugin.get_contract(context._plugin_context,
                                                 contract_id)
+        contract_sg_mappings = self._get_contract_sg_mapping(
+                                context._plugin_context.session,
+                                contract_id)
+        consumed_sg_id = contract_sg_mappings['consumed_sg_id']
+        provided_sg_id = contract_sg_mappings['provided_sg_id']
         if direction == 'provided':
-            assoc_sg_id = contract['provided_sg_id']
-            consumed_sg_id = contract['consumed_sg_id']
+            assoc_sg_id = provided_sg_id
             for subnet_id in subnets:
                 subnet = context._plugin.get_subnet(context._plugin_context,
                                                     subnet_id)
                 cidr = subnet['cidr']
                 cidr_list.append(cidr)
         else:
-            assoc_sg_id = contract['consumed_sg_id']
+            assoc_sg_id = consumed_sg_id
         policy_rules = contract['policy_rules']
         for policy_rule_id in policy_rules:
             policy_rule = context,_plugin.get_policy_rule(
