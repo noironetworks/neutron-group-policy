@@ -228,6 +228,81 @@ class ResourceMappingDriver(api.PolicyDriver):
             self._cleanup_router(context, router_id)
 
     @log.log
+    def create_policy_classifier_precommit(self, context):
+        pass
+
+    @log.log
+    def create_policy_classifier_postcommit(self, context):
+        pass
+
+    @log.log
+    def update_policy_classifier_precommit(self, context):
+        pass
+
+    @log.log
+    def update_policy_classifier_postcommit(self, context):
+        pass
+
+    @log.log
+    def delete_policy_classifier_precommit(self, context):
+        pass
+                                                                                    @log.log
+    def delete_policy_classifier_postcommit(self, context):
+        pass
+
+    @log.log
+    def create_policy_action_precommit(self, context):
+        pass
+
+    @log.log
+    def create_policy_action_postcommit(self, context):
+        pass
+
+    @log.log
+    def update_policy_action_precommit(self, context):
+        pass
+
+    @log.log
+    def update_policy_action_postcommit(self, context):
+        pass
+
+    @log.log
+    def delete_policy_action_precommit(self, context):
+        pass
+
+    @log.log
+    def delete_policy_action_postcommit(self, context):
+        pass
+
+    @log.log
+    def create_policy_rule_precommit(self, context):
+        pass
+
+    @log.log
+    def create_policy_rule_postcommit(self, context):
+        pass
+
+    @log.log
+    def update_policy_rule_precommit(self, context):
+        pass
+
+    @log.log
+    def update_policy_rule_postcommit(self, context):
+        pass
+
+    @log.log
+    def delete_policy_rule_precommit(self, context):
+        pass
+
+    @log.log
+    def delete_policy_rule_postcommit(self, context):
+        pass
+
+    @log.log
+    def create_contract_precommit(self, context):
+        pass
+
+    @log.log
     def create_contract_postcommit(self, context):
         # creating SGs
         contract_id = context.current['id']
@@ -238,6 +313,21 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._set_contract_sg_mapping(context._plugin_context.session,
                                       contract_id, consumed_sg_id,
                                       provided_sg_id)
+    @log.log
+    def update_contract_precommit(self, context):
+        pass
+
+    @log.log
+    def update_contract_postcommit(self, context):
+        pass
+
+    @log.log
+    def delete_contract_precommit(self, context):
+        pass
+
+    @log.log
+    def delete_contract_postcommit(self, context):
+        pass
 
     def _use_implicit_port(self, context):
         epg_id = context.current['endpoint_group_id']
