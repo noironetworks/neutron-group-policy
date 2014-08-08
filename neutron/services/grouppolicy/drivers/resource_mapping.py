@@ -72,13 +72,12 @@ class ContractSGsMapping(model_base.BASEV2):
 
     __tablename__ = 'gpm_contract_sg_mapping'
     contract_id = sa.Column(sa.String(36),
-                            sa.ForeignKey('gp_contracts.id',
-                                          ondelete='CASCADE'),
+                          sa.ForeignKey('gp_contracts.id', ondelete='CASCADE'),
                             nullable=False, primary_key=True)
     provided_sg_id = sa.Column(sa.String(36),
-                               sa.ForeignKey('security_groups.id'))
+                               sa.ForeignKey('securitygroups.id'))
     consumed_sg_id = sa.Column(sa.String(36),
-                               sa.ForeignKey('security_groups.id'))
+                               sa.ForeignKey('securitygroups.id'))
 
 
 class ResourceMappingDriver(api.PolicyDriver):
@@ -246,7 +245,8 @@ class ResourceMappingDriver(api.PolicyDriver):
     @log.log
     def delete_policy_classifier_precommit(self, context):
         pass
-                                                                                    @log.log
+
+    @log.log
     def delete_policy_classifier_postcommit(self, context):
         pass
 
@@ -677,7 +677,7 @@ class ResourceMappingDriver(api.PolicyDriver):
             return (session.query(ContractSGsMapping).
                     filter_by(contract_id=contract_id).one())
 
-    def _set_sg_rule(self, context, sg_id, protocol, ip_prefix)
+    def _set_sg_rule(self, context, sg_id, protocol, ip_prefix):
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': 'gp_mapped_rule_' + context.current['name'],
                  'security_group_id': sg_id,
@@ -686,7 +686,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                  'remote_ip_prefix': ip_prefix}
         sg_rule = self._create_sg_rule(context, attrs)
 
-    def _assoc_sg_to_port(self, context, port_id, sg_id)
+    def _assoc_sg_to_port(self, context, port_id, sg_id):
         # TODO(s3wong): this probably doesn't work, security group isn't
         # an attribute of port, you have another security-group port binding
         # to look up per port security. This update probably requires
@@ -702,7 +702,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         # self._process_port_create_security_group(context, port, sg_list)
 
     def _assoc_sg_to_epg(self, context, ep_list, subnets,
-                         contract_id, direction)
+                         contract_id, direction):
         # TODO(s3wong): some inefficiency here, particulary for update
         # as we don't check if a port is already associated with a
         # security group
