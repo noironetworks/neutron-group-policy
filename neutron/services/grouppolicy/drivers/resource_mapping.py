@@ -67,6 +67,7 @@ class OwnedRouter(model_base.BASEV2):
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           nullable=False, primary_key=True)
 
+
 class ContractSGsMapping(model_base.BASEV2):
     """Contract to SGs mapping DB."""
 
@@ -313,6 +314,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         self._set_contract_sg_mapping(context._plugin_context.session,
                                       contract_id, consumed_sg_id,
                                       provided_sg_id)
+
     @log.log
     def update_contract_precommit(self, context):
         pass
@@ -457,7 +459,6 @@ class ResourceMappingDriver(api.PolicyDriver):
         for ct_id in provided_contracts:
             self._assoc_sg_to_epg(context, list_of_ep, subnets,
                                   ct_id, 'provided')
-
 
     # The following methods perform the necessary subset of
     # functionality from neutron.api.v2.base.Controller.
@@ -677,14 +678,28 @@ class ResourceMappingDriver(api.PolicyDriver):
             return (session.query(ContractSGsMapping).
                     filter_by(contract_id=contract_id).one())
 
-    def _set_sg_rule(self, context, sg_id, protocol, ip_prefix):
+    # This is an exact replica of method in group_policy_db
+    def _get_min_max_ports_from_range(self, port_range):
+        if not port_range:
+            return [None, None]
+        min_port, sep, max_port = port_range.partition(":")
+        if not max_port:
+            max_port = min_port
+        return [int(min_port), int(max_port)]
+
+    def _set_sg_rule(self, context, sg_id, protocol, port_range, ip_prefix):
+        port_min, port_max = self._get_min_max_ports_from_range(port_range)
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': 'gp_mapped_rule_' + context.current['name'],
                  'security_group_id': sg_id,
                  'direction': 'egress',
+                 'ethertype': const.IPv4,
                  'protocol': protocol,
-                 'remote_ip_prefix': ip_prefix}
-        sg_rule = self._create_sg_rule(context, attrs)
+                 'port_range_min': port_min,
+                 'port_range_max': port_max,
+                 'remote_ip_prefix': ip_prefix,
+                 'remote_group_id': None}
+        return (self._create_sg_rule(context, attrs))
 
     def _assoc_sg_to_port(self, context, port_id, sg_id):
         # TODO(s3wong): this probably doesn't work, security group isn't
@@ -695,7 +710,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         port_dict = context._plugin._make_port_dict(port)
         sg_list = port_dict['security_groups']
         sg_list.append(sg_id)
-        port_dict['security_groups'] = sg_list;
+        port_dict['security_groups'] = sg_list
         self._update_port(context, port_id)
         # after that we should call _create_port_security_group_binding,
         # which requires this to be child of security_group_db
@@ -713,10 +728,11 @@ class ResourceMappingDriver(api.PolicyDriver):
                                 contract_id)
         consumed_sg_id = contract_sg_mappings['consumed_sg_id']
         provided_sg_id = contract_sg_mappings['provided_sg_id']
+        cidr_list = []
         if direction == 'provided':
             assoc_sg_id = provided_sg_id
             for subnet_id in subnets:
-                subnet = context._plugin.get_subnet(context._plugin_context,
+                subnet = self._core_plugin.get_subnet(context._plugin_context,
                                                     subnet_id)
                 cidr = subnet['cidr']
                 cidr_list.append(cidr)
@@ -724,7 +740,7 @@ class ResourceMappingDriver(api.PolicyDriver):
             assoc_sg_id = consumed_sg_id
         policy_rules = contract['policy_rules']
         for policy_rule_id in policy_rules:
-            policy_rule = context,_plugin.get_policy_rule(
+            policy_rule = context._plugin.get_policy_rule(
                                             context._plugin_context,
                                             policy_rule_id)
             classifier_id = policy_rule['policy_classifier_id']
@@ -733,6 +749,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                                                 classifier_id)
             classifier_dir = classifier['direction']
             protocol = classifier['protocol']
+            port_range = classifier['port_range']
 
             if direction == 'provided':
                 # if contract is provided by EPG, we do the following:
@@ -743,16 +760,17 @@ class ResourceMappingDriver(api.PolicyDriver):
                 # the consumed_sg
                 if classifier_dir == gconst.GP_DIRECTION_BI:
                     self._set_sg_rule(context, assoc_sg_id,
-                                      protocol, '0.0.0.0/0')
+                                      protocol, port_range, '0.0.0.0/0')
                     for cidr in cidr_list:
                         self._set_sg_rule(context, consumed_sg_id,
-                                          protocol, cidr)
+                                          protocol, port_range, cidr)
                 elif classifier_dir == gconst.GP_DIRECTION_IN:
                     for cidr in cidr_list:
                         self._set_sg_rule(context, consumed_sg_id,
-                                          protocol, cidr)
+                                          protocol, port_range, cidr)
                 else:
-                    self._set_sg_rule(context, assoc_sg_id, policy_rule)
+                    self._set_sg_rule(context, assoc_sg_id,
+                                      protocol, port_range, '0.0.0.0/0')
             # if it is a consumed contract, the rules should all be
             # set up when we render this contract as part of a provided
             # contract for some EPG(s), so no need to add rules

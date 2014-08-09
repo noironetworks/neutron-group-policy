@@ -18,10 +18,13 @@ import webob.exc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.notifiers import nova
 from neutron.services.grouppolicy import config
+from neutron.tests.unit import test_extension_security_group
 from neutron.tests.unit.services.grouppolicy import test_grouppolicy_plugin
 
 
 CORE_PLUGIN = 'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin'
+SG_CORE_PLUGIN=('neutron.tests.unit.test_extension_security_group.'
+                   'SecurityGroupTestPlugin')
 
 
 class ResourceMappingTestCase(
@@ -372,3 +375,34 @@ class NotificationTest(ResourceMappingTestCase):
             nova_notifier.assert_any_call("create_network", {}, mock.ANY)
             nova_notifier.assert_any_call("create_subnet", {}, mock.ANY)
             nova_notifier.assert_any_call("create_port", {}, mock.ANY)
+
+class ResourceMappingSGTestCase(
+        test_grouppolicy_plugin.GroupPolicyPluginTestCase):
+
+    def setUp(self):
+        config.cfg.CONF.set_override('policy_drivers',
+                                     ['implicit_policy', 'resource_mapping'],
+                                     group='group_policy')
+        super(ResourceMappingSGTestCase, self).setUp(core_plugin=SG_CORE_PLUGIN)
+
+
+class TestContract(ResourceMappingSGTestCase):
+
+    def test_contract_creation(self):
+        # Create contracts
+        classifier = self.create_policy_classifier(name="class1",
+                protocol="tcp", direction="in", port_range="50:100")
+        classifier_id = classifier['policy_classifier']['id']
+        action = self.create_policy_action(name="action1")
+        action_id = action['policy_action']['id']
+        action_id_list = [action_id]
+        policy_rule = self.create_policy_rule(name='pr1',
+                policy_classifier_id=classifier_id,
+                policy_actions=action_id_list)
+        policy_rule_id = policy_rule['policy_rule']['id']
+        policy_rule_list = [policy_rule_id]
+        contract = self.create_contract(name="c1",
+                policy_rules=policy_rule_list)
+        contract_id = contract['contract']['id']
+        epg = self.create_endpoint_group(name="epg1",
+                provided_contracts={contract_id:None})
