@@ -16,11 +16,11 @@ import mock
 import webob.exc
 
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
+from neutron.extensions import securitygroup as ext_sg
 from neutron.notifiers import nova
 from neutron.services.grouppolicy import config
 from neutron.tests.unit import test_extension_security_group
 from neutron.tests.unit.services.grouppolicy import test_grouppolicy_plugin
-
 
 CORE_PLUGIN = 'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin'
 SG_CORE_PLUGIN=('neutron.tests.unit.test_extension_security_group.'
@@ -391,7 +391,7 @@ class TestContract(ResourceMappingSGTestCase):
     def test_contract_creation(self):
         # Create contracts
         classifier = self.create_policy_classifier(name="class1",
-                protocol="tcp", direction="in", port_range="50:100")
+                protocol="tcp", direction="out", port_range="50:100")
         classifier_id = classifier['policy_classifier']['id']
         action = self.create_policy_action(name="action1")
         action_id = action['policy_action']['id']
@@ -406,3 +406,22 @@ class TestContract(ResourceMappingSGTestCase):
         contract_id = contract['contract']['id']
         epg = self.create_endpoint_group(name="epg1",
                 provided_contracts={contract_id:None})
+        epg_id = epg['endpoint_group']['id']
+        ep = self.create_endpoint(name="ep1", endpoint_group_id=epg_id)
+
+        # verify SG bind to port
+        expected_sg_name = "provided_" + contract['contract']['name']
+        port_id = ep['endpoint']['port_id']
+        res = self.new_show_request('ports', port_id)
+        port = self.deserialize(self.fmt, res.get_response(self.api))
+        security_groups = port['port'][ext_sg.SECURITYGROUPS]
+        self.assertEqual(len(security_groups),2)
+        # browse through all security groups associated with port
+        found = False
+        #for sg_id in security_groups:
+        #    res = self.new_show_request('security-groups', sg_id)
+        #    sg = self.deserialize(self.fmt, res.get_response(self.api))
+        #    if (sg['security_group']['name'] == expected_sg_name):
+        #        found = True
+        #        break
+        self.assertEqual(found, True)

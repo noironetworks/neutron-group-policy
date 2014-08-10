@@ -21,6 +21,7 @@ from neutron.common import constants as const
 from neutron.common import log
 from neutron.db import model_base
 from neutron import manager
+from neutron.extensions import securitygroup as ext_sg
 from neutron.notifiers import nova
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
@@ -104,7 +105,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         # EPG.
         if not context.current['port_id']:
             self._use_implicit_port(context)
-        # TODO(s3wong): bind port to contract-default-security-group
+        self._assoc_epg_contract_to_ep(context, context.current['id'],
+                                       context.current['endpoint_group_id'])
 
     @log.log
     def update_endpoint_precommit(self, context):
@@ -311,6 +313,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         provided_sg = self._create_contract_sg(context, 'provided')
         consumed_sg_id = consumed_sg['id']
         provided_sg_id = provided_sg['id']
+        LOG.info("SKW: consumed_sg_id is %s, provided_sg_id is %s", consumed_sg_id, provided_sg_id)
         self._set_contract_sg_mapping(context._plugin_context.session,
                                       contract_id, consumed_sg_id,
                                       provided_sg_id)
@@ -471,6 +474,11 @@ class ResourceMappingDriver(api.PolicyDriver):
         return self._create_resource(self._core_plugin,
                                      context._plugin_context,
                                      'port', attrs)
+
+    def _update_port(self, context, port_id, attrs):
+        return self._update_resource(self._core_plugin,
+                                     context._plugin_context,
+                                     'port', port_id, attrs)
 
     def _delete_port(self, context, port_id):
         self._delete_resource(self._core_plugin,
@@ -689,6 +697,7 @@ class ResourceMappingDriver(api.PolicyDriver):
 
     def _set_sg_rule(self, context, sg_id, protocol, port_range, ip_prefix):
         port_min, port_max = self._get_min_max_ports_from_range(port_range)
+        LOG.info("SKW[_set_sg_rule]: setting rule with sg_id %s protocol %s port_min %d port_max %d ip_prefix %s", sg_id, protocol, port_min, port_max, ip_prefix)
         attrs = {'tenant_id': context.current['tenant_id'],
                  'name': 'gp_mapped_rule_' + context.current['name'],
                  'security_group_id': sg_id,
@@ -702,19 +711,56 @@ class ResourceMappingDriver(api.PolicyDriver):
         return (self._create_sg_rule(context, attrs))
 
     def _assoc_sg_to_port(self, context, port_id, sg_id):
-        # TODO(s3wong): this probably doesn't work, security group isn't
-        # an attribute of port, you have another security-group port binding
-        # to look up per port security. This update probably requires
-        # security group db
-        port = context._plugin.get_port(context._plugin_context, port_id)
-        port_dict = context._plugin._make_port_dict(port)
-        sg_list = port_dict['security_groups']
+        port = self._core_plugin.get_port(context._plugin_context, port_id)
+        sg_list = port[ext_sg.SECURITYGROUPS]
         sg_list.append(sg_id)
-        port_dict['security_groups'] = sg_list
-        self._update_port(context, port_id)
-        # after that we should call _create_port_security_group_binding,
-        # which requires this to be child of security_group_db
-        # self._process_port_create_security_group(context, port, sg_list)
+        port[ext_sg.SECURITYGROUPS] = sg_list
+        self._update_port(context, port_id, port)
+
+        #SKW
+        fetch_port = self._core_plugin.get_port(context._plugin_context, port_id)
+        fetch_sg_list = fetch_port[ext_sg.SECURITYGROUPS]
+        LOG.info("SKW: fetch_sg_list has length %d", len(fetch_sg_list))
+        for sg_id in fetch_sg_list:
+            LOG.info("SKW: port %s has sg %s", port_id, sg_id)
+        #SKW
+
+    # This is used when an endpoint is created and associated with
+    # an endpoint group
+    # Here, unlike creating EPG, the SGs and associated rules are
+    # already set up, so just associate with port
+    def _assoc_epg_contract_to_ep(self, context, ep_id, epg_id):
+        ep = context._plugin.get_endpoint(context._plugin_context,
+                                          ep_id)
+        epg = context._plugin.get_endpoint_group(context._plugin_context,
+                                                 epg_id)
+        port_id = ep['port_id']
+        provided_contracts = epg['provided_contracts']
+        consumed_contracts = epg['consumed_contracts']
+        for contract_id in provided_contracts:
+            contract_sg_mappings = self._get_contract_sg_mapping(
+                                    context._plugin_context.session,
+                                    contract_id)
+            provided_sg_id = contract_sg_mappings['provided_sg_id']
+            # SKW
+            LOG.info("SKW: provided_sg_id is %s", provided_sg_id)
+            sg = self._core_plugin.get_security_group(context._plugin_context,
+                                                      provided_sg_id)
+            sg_rules = self._core_plugin.get_security_group_rules(
+                                    context._plugin_context,
+                                    {'security_group_id': [provided_sg_id]})
+            for rule in sg_rules:
+                LOG.info("SKW: rule %s with group id %s direction %s protocol %s port_range_min %s port_range_max %s", rule['id'], rule['security_group_id'], rule['direction'], rule['protocol'], rule['port_range_min'], rule['port_range_max'])
+            # SKW
+            self._assoc_sg_to_port(context, port_id, provided_sg_id)
+
+        for contract_id in consumed_contracts:
+            contract_sg_mappings = self._get_contract_sg_mapping(
+                                    context._plugin_context.session,
+                                    contract_id)
+            consumed_sg_id = contract_sg_mappings['consumed_sg_id']
+            self._assoc_sg_to_port(context, port_id, consumed_sg_id)
+
 
     def _assoc_sg_to_epg(self, context, ep_list, subnets,
                          contract_id, direction):
