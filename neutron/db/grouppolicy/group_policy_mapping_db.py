@@ -262,4 +262,3 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                 del l3p['routers']
             l3p_db.update(l3p)
         return self._make_l3_policy_dict(l3p_db)
-
